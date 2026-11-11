@@ -1,8 +1,10 @@
 ---
 name: groq-ai-studio
-description: Groq AI Studio, Marko's local browser chat for the Groq API (command `qwen`, repo groq_ai_studio, installed in ~/.groq): key pool with failover, spend ledger, Code Box, GitHub reader, backdoor API on port 8765. Use for ANY qwen command / Groq chat app / Groq key pool / groq-cli / Groq AI Studio task.
+description: Groq AI Studio, Marko's local browser chat for the Groq API (command `qwen` / "Queen", repo groq_ai_studio, installed in ~/.groq): key pool with failover, spend ledger, Code Box, GitHub reader, backdoor API on port 8765. Use for ANY qwen command / Queen / Groq chat app / Groq key pool / groq-cli / Groq AI Studio task.
 ---
 # Groq AI Studio
+
+**Note:** "Queen" = `qwen` command. When Marko says "Queen", he means this qwen application.
 
 Read `TAKEOVER.md` in the repo first: it holds everything known (files, commands, HTTP API, dangers, what is untested).
 
