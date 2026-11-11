@@ -60,6 +60,113 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   z-index: 100;
 }
 #sidebar.collapsed { transform: translateX(-260px); margin-right: -260px; }
+#sidebar.tester-mode { width: 370px; }
+
+/* ── Sidebar Tabs ── */
+#sidebar-tabs {
+  display: flex; gap: 0; padding: 0 14px; margin-top: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-tab-btn {
+  flex: 1; padding: 8px 12px; font-size: 13px; font-weight: 500;
+  background: transparent; border: none; color: var(--text-sub);
+  cursor: pointer; border-bottom: 2px solid transparent;
+  transition: all .18s ease;
+}
+.sidebar-tab-btn:hover { color: var(--text); background: var(--bg-hover); }
+.sidebar-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+#sidebar-studio-pane, #sidebar-key-tester-pane {
+  display: flex; flex-direction: column; flex: 1; overflow: hidden;
+}
+#sidebar-key-tester-pane { display: none; }
+#sidebar-key-tester-pane.active { display: flex; }
+
+/* ── Key Tester Pane ── */
+.kt-header {
+  padding: 12px 14px; display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid var(--border);
+}
+#btn-run-key-tester {
+  flex: 1; padding: 8px 12px; font-size: 13px; font-weight: 600;
+  background: var(--accent); color: white; border: none; border-radius: 8px;
+  cursor: pointer; transition: all .18s ease;
+}
+#btn-run-key-tester:hover { background: var(--accent-btn); }
+#btn-run-key-tester:disabled { opacity: 0.5; cursor: not-allowed; }
+#kt-summary-pill {
+  padding: 4px 10px; font-size: 11px; font-weight: 700;
+  background: rgba(111,186,138,.15); color: var(--green);
+  border: 1px solid rgba(111,186,138,.35); border-radius: 100px;
+}
+
+#kt-stats-bar {
+  display: flex; gap: 10px; padding: 10px 14px;
+  border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 600;
+}
+.kt-stat { display: flex; align-items: center; gap: 4px; color: var(--text-sub); }
+.kt-stat-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+}
+.kt-stat-dot.works { background: var(--green); }
+.kt-stat-dot.nocredit { background: var(--amber); }
+.kt-stat-dot.rejected { background: var(--red); }
+.kt-stat-dot.throttled { background: var(--blue); }
+
+#kt-results-list {
+  flex: 1; overflow-y: auto; padding: 8px;
+}
+.kt-card {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px; margin-bottom: 8px;
+}
+.kt-card-header {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+}
+.kt-provider-badge {
+  padding: 2px 7px; font-size: 10px; font-weight: 700; text-transform: uppercase;
+  border-radius: 100px; letter-spacing: .06em;
+}
+.kt-provider-badge.groq { background: rgba(217,119,87,.15); color: var(--accent); border: 1px solid rgba(217,119,87,.35); }
+.kt-provider-badge.anthropic { background: rgba(96,165,250,.15); color: #7cc0ff; border: 1px solid rgba(96,165,250,.35); }
+.kt-provider-badge.google { background: rgba(111,186,138,.15); color: var(--green); border: 1px solid rgba(111,186,138,.35); }
+.kt-source-badge {
+  padding: 2px 6px; font-size: 9px; font-weight: 600;
+  background: var(--bg-input); color: var(--text-dim);
+  border-radius: 4px; font-family: var(--mono);
+}
+.kt-key-masked {
+  font-family: var(--mono); font-size: 11px; color: var(--text-sub);
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.kt-verdict {
+  padding: 3px 8px; font-size: 10px; font-weight: 700; text-transform: uppercase;
+  border-radius: 100px; letter-spacing: .06em;
+}
+.kt-verdict.works { background: rgba(111,186,138,.15); color: var(--green); border: 1px solid rgba(111,186,138,.35); }
+.kt-verdict.nocredit { background: rgba(212,162,89,.15); color: var(--amber); border: 1px solid rgba(212,162,89,.35); }
+.kt-verdict.rejected { background: rgba(224,108,108,.15); color: var(--red); border: 1px solid rgba(224,108,108,.35); }
+.kt-verdict.throttled { background: rgba(122,184,224,.15); color: var(--blue); border: 1px solid rgba(122,184,224,.35); }
+.kt-verdict.unclear { background: var(--bg-input); color: var(--text-dim); border: 1px solid var(--border); }
+.kt-card-body {
+  font-size: 11px; color: var(--text-sub); line-height: 1.5;
+}
+.kt-card-body div { margin-bottom: 4px; }
+.kt-card-body strong { color: var(--text); font-weight: 600; }
+.kt-models-details {
+  margin-top: 6px; font-size: 10px; color: var(--text-dim);
+}
+.kt-models-details summary {
+  cursor: pointer; font-weight: 600; color: var(--text-sub);
+}
+.kt-models-details summary:hover { color: var(--text); }
+.kt-models-list {
+  margin-top: 4px; padding-left: 12px; max-height: 120px; overflow-y: auto;
+}
+.kt-models-list li {
+  font-family: var(--mono); font-size: 10px; color: var(--text-dim);
+  margin-bottom: 2px;
+}
 
 .side-top {
   padding: 14px 14px 10px;
@@ -695,12 +802,35 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
       </button>
     </div>
 
-    <button class="btn-new" id="btn-new-chat">
-      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-      New conversation
-    </button>
+    <!-- Sidebar Tabs -->
+    <div id="sidebar-tabs">
+      <button class="sidebar-tab-btn active" id="tab-btn-studio" data-tab="studio">⚡ Groq Studio</button>
+      <button class="sidebar-tab-btn" id="tab-btn-key-tester" data-tab="key-tester">🔑 Key Tester</button>
+    </div>
 
-    <div class="side-sessions" id="sessions-list"></div>
+    <!-- Studio Pane (default active) -->
+    <div id="sidebar-studio-pane" class="active">
+      <button class="btn-new" id="btn-new-chat" style="margin: 12px 14px 0;">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+        New conversation
+      </button>
+      <div class="side-sessions" id="sessions-list"></div>
+    </div>
+
+    <!-- Key Tester Pane -->
+    <div id="sidebar-key-tester-pane">
+      <div class="kt-header">
+        <button id="btn-run-key-tester">▶ Test All Keys</button>
+        <span id="kt-summary-pill">0 keys</span>
+      </div>
+      <div id="kt-stats-bar">
+        <div class="kt-stat"><span class="kt-stat-dot works"></span><span id="kt-stat-works">0</span> Works</div>
+        <div class="kt-stat"><span class="kt-stat-dot nocredit"></span><span id="kt-stat-nocredit">0</span> No Credit</div>
+        <div class="kt-stat"><span class="kt-stat-dot rejected"></span><span id="kt-stat-rejected">0</span> Rejected</div>
+        <div class="kt-stat"><span class="kt-stat-dot throttled"></span><span id="kt-stat-throttled">0</span> Throttled</div>
+      </div>
+      <div id="kt-results-list"></div>
+    </div>
 
     <div class="side-footer">
       <div class="spend-pill">
@@ -2994,6 +3124,172 @@ document.getElementById("eng-instruction-input").addEventListener("keydown", fun
     triggerSurgicalAutoUpdate();
   }
 });
+
+// ═══════════════════════════════════════════════════
+//  KEY TESTER
+// ═══════════════════════════════════════════════════
+var keyTesterActive = false;
+var keyTesterInventory = [];
+
+function switchSidebarTab(tabName){
+  var studioPaneEl = document.getElementById("sidebar-studio-pane");
+  var testerPaneEl = document.getElementById("sidebar-key-tester-pane");
+  var studioBtnEl = document.getElementById("tab-btn-studio");
+  var testerBtnEl = document.getElementById("tab-btn-key-tester");
+  var sidebarEl = document.getElementById("sidebar");
+  if (tabName === "studio"){
+    studioPaneEl.classList.add("active");
+    testerPaneEl.classList.remove("active");
+    studioBtnEl.classList.add("active");
+    testerBtnEl.classList.remove("active");
+    sidebarEl.classList.remove("tester-mode");
+    keyTesterActive = false;
+  } else if (tabName === "key-tester"){
+    studioPaneEl.classList.remove("active");
+    testerPaneEl.classList.add("active");
+    studioBtnEl.classList.remove("active");
+    testerBtnEl.classList.add("active");
+    sidebarEl.classList.add("tester-mode");
+    keyTesterActive = true;
+    loadKeyTesterInventory();
+  }
+}
+
+document.getElementById("tab-btn-studio").onclick = function(){ switchSidebarTab("studio"); };
+document.getElementById("tab-btn-key-tester").onclick = function(){ switchSidebarTab("key-tester"); };
+
+async function loadKeyTesterInventory(){
+  try{
+    var res = await fetch("/api/key_tester/keys");
+    var data = await res.json();
+    if (data.ok){
+      keyTesterInventory = data.keys || [];
+      document.getElementById("kt-summary-pill").textContent = keyTesterInventory.length + " key" + (keyTesterInventory.length !== 1 ? "s" : "");
+      renderKeyTesterInventory();
+    }
+  } catch(e){
+    console.error("Failed to load key tester inventory:", e);
+  }
+}
+
+function renderKeyTesterInventory(){
+  var listEl = document.getElementById("kt-results-list");
+  listEl.innerHTML = "";
+  if (keyTesterInventory.length === 0){
+    listEl.innerHTML = "<div style='padding:20px;text-align:center;color:var(--text-dim);font-size:13px;'>No keys found. Import keys via Key Manager.</div>";
+    return;
+  }
+  keyTesterInventory.forEach(function(k){
+    var card = document.createElement("div");
+    card.className = "kt-card";
+    var header = document.createElement("div");
+    header.className = "kt-card-header";
+    var providerBadge = document.createElement("span");
+    providerBadge.className = "kt-provider-badge " + k.provider;
+    providerBadge.textContent = k.provider.charAt(0).toUpperCase() + k.provider.slice(1);
+    var sourceBadge = document.createElement("span");
+    sourceBadge.className = "kt-source-badge";
+    sourceBadge.textContent = k.source;
+    var keyMasked = document.createElement("span");
+    keyMasked.className = "kt-key-masked";
+    keyMasked.textContent = k.masked;
+    keyMasked.title = k.fingerprint;
+    header.appendChild(providerBadge);
+    header.appendChild(sourceBadge);
+    header.appendChild(keyMasked);
+    var body = document.createElement("div");
+    body.className = "kt-card-body";
+    body.innerHTML = "<div><strong>Status:</strong> Not tested yet. Click '▶ Test All Keys' to run live check.</div>";
+    card.appendChild(header);
+    card.appendChild(body);
+    listEl.appendChild(card);
+  });
+}
+
+async function runKeyTester(){
+  var btnEl = document.getElementById("btn-run-key-tester");
+  btnEl.disabled = true;
+  btnEl.textContent = "⏳ Testing...";
+  var listEl = document.getElementById("kt-results-list");
+  listEl.innerHTML = "<div style='padding:20px;text-align:center;color:var(--text-sub);font-size:13px;'>Running live key tests (Two-Step Truth Check)...</div>";
+  try{
+    var res = await fetch("/api/key_tester/run", { method: "POST" });
+    var data = await res.json();
+    if (data.ok){
+      renderKeyTesterResults(data.summary, data.results);
+    } else {
+      listEl.innerHTML = "<div style='padding:20px;text-align:center;color:var(--red);font-size:13px;'>Error: " + (data.error || "Unknown error") + "</div>";
+    }
+  } catch(e){
+    listEl.innerHTML = "<div style='padding:20px;text-align:center;color:var(--red);font-size:13px;'>Request failed: " + e.message + "</div>";
+  } finally {
+    btnEl.disabled = false;
+    btnEl.textContent = "▶ Test All Keys";
+  }
+}
+
+function renderKeyTesterResults(summary, results){
+  document.getElementById("kt-stat-works").textContent = summary.works || 0;
+  document.getElementById("kt-stat-nocredit").textContent = summary.nocredit || 0;
+  document.getElementById("kt-stat-rejected").textContent = summary.rejected || 0;
+  document.getElementById("kt-stat-throttled").textContent = summary.throttled || 0;
+  var listEl = document.getElementById("kt-results-list");
+  listEl.innerHTML = "";
+  if (results.length === 0){
+    listEl.innerHTML = "<div style='padding:20px;text-align:center;color:var(--text-dim);font-size:13px;'>No results.</div>";
+    return;
+  }
+  results.forEach(function(r){
+    var card = document.createElement("div");
+    card.className = "kt-card";
+    var header = document.createElement("div");
+    header.className = "kt-card-header";
+    var providerBadge = document.createElement("span");
+    providerBadge.className = "kt-provider-badge " + r.provider;
+    providerBadge.textContent = r.provider.charAt(0).toUpperCase() + r.provider.slice(1);
+    var sourceBadge = document.createElement("span");
+    sourceBadge.className = "kt-source-badge";
+    sourceBadge.textContent = r.source;
+    var keyMasked = document.createElement("span");
+    keyMasked.className = "kt-key-masked";
+    keyMasked.textContent = r.masked;
+    keyMasked.title = r.fingerprint;
+    var verdict = document.createElement("span");
+    verdict.className = "kt-verdict " + r.verdict;
+    verdict.textContent = r.verdict.toUpperCase();
+    header.appendChild(providerBadge);
+    header.appendChild(sourceBadge);
+    header.appendChild(keyMasked);
+    header.appendChild(verdict);
+    var body = document.createElement("div");
+    body.className = "kt-card-body";
+    var statusLine = "<div><strong>HTTP Status:</strong> " + (r.http_status || "N/A") + " | <strong>Latency:</strong> " + (r.latency_ms || "N/A") + " ms</div>";
+    var creditLine = "<div><strong>Credit / Quota Left:</strong> " + (r.credit_info || "N/A") + "</div>";
+    var modelsLine = "<div><strong>Supported Models:</strong> " + (r.models_count || 0) + " model" + (r.models_count !== 1 ? "s" : "") + "</div>";
+    body.innerHTML = statusLine + creditLine + modelsLine;
+    if (r.models && r.models.length > 0){
+      var details = document.createElement("details");
+      details.className = "kt-models-details";
+      var summary = document.createElement("summary");
+      summary.textContent = "Show supported models";
+      var ul = document.createElement("ul");
+      ul.className = "kt-models-list";
+      r.models.forEach(function(m){
+        var li = document.createElement("li");
+        li.textContent = m;
+        ul.appendChild(li);
+      });
+      details.appendChild(summary);
+      details.appendChild(ul);
+      body.appendChild(details);
+    }
+    card.appendChild(header);
+    card.appendChild(body);
+    listEl.appendChild(card);
+  });
+}
+
+document.getElementById("btn-run-key-tester").onclick = runKeyTester;
 
 // ═══════════════════════════════════════════════════
 //  INIT

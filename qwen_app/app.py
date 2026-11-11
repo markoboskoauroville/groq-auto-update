@@ -61,7 +61,11 @@ from auto_updater import (  # noqa: E402
     fetch_provider_models,
     get_job_status,
     get_public_auto_update_config,
+    key_fingerprint,
     load_auto_update_ledger,
+    load_auto_update_store,
+    mask_secret,
+    redact_secrets,
     run_surgical_auto_update,
     set_auto_update_selection,
 )
@@ -949,6 +953,305 @@ def clear_keys():
 def reset_keys():
     pool.reset()
     return jsonify(ok=True, count=len(pool.keys), items=pool.status_rich(), message="Key cooldowns reset.")
+# ─────────────── KEY TESTER ROUTES ────────────────
+@app.get("/api/key_tester/keys")
+def api_key_tester_keys():
+    """Return masked inventory of ALL keys in Queen (Groq pool + Auto-Update store)."""
+    inventory = []
+    # Groq keys from pool
+    for k in pool.keys:
+        inventory.append({
+            "provider": "groq",
+            "source": "Groq Pool",
+            "masked": mask_secret(k),
+            "fingerprint": key_fingerprint(k),
+        })
+    # Auto-Update keys (Anthropic + Google)
+    try:
+        au_store = load_auto_update_store()
+        for provider in ["anthropic", "google"]:
+            for k in au_store.get("keys", {}).get(provider, []):
+                inventory.append({
+                    "provider": provider,
+                    "source": "Auto-Update Pool",
+                    "masked": mask_secret(k),
+                    "fingerprint": key_fingerprint(k),
+                })
+    except Exception:
+        pass
+    return jsonify(ok=True, keys=inventory)
+
+@app.post("/api/key_tester/run")
+def api_key_tester_run():
+    """Test every key in Queen with Two-Step Truth Check (GET /models + 1-token POST)."""
+    import concurrent.futures
+    import httpx
+
+    WAIT_HINTS = (
+        "retrydelay", "retry-after", "retry_after", "per minute", "rate limit",
+        "try again in", "quotafailure", "too many requests"
+    )
+    STRONG_MONEY = (
+        "credit", "e0300", "zero_credits", "balance", "depleted", "insufficient",
+        "billing", "payment", "out of funds", "upgrade your plan", "prepayment",
+        "payment required"
+    )
+    WEAK_MONEY = (
+        "quota", "exhausted", "resource_exhausted", "free tier", "plan limit"
+    )
+
+    def classify_verdict(status_code: int, error_text: str, headers: dict) -> str:
+        """Classify key test result into verdict: works, nocredit, rejected, throttled, unclear."""
+        lower = error_text.lower()
+        # Check WAIT_HINTS first (rate-limit signals)
+        if any(h in lower for h in WAIT_HINTS):
+            return "throttled"
+        # Check STRONG_MONEY (credit/billing errors)
+        if any(h in lower for h in STRONG_MONEY):
+            return "nocredit"
+        # Check WEAK_MONEY (quota errors)
+        if any(h in lower for h in WEAK_MONEY):
+            return "nocredit"
+        # Check HTTP status codes
+        if status_code in (401, 403):
+            return "rejected"
+        if status_code == 429:
+            return "throttled"
+        if status_code in (200, 201):
+            return "works"
+        return "unclear"
+
+    def test_groq_key(key: str) -> dict:
+        """Test Groq key: GET /models + 1-token POST /chat/completions."""
+        result = {
+            "provider": "groq",
+            "source": "Groq Pool",
+            "masked": mask_secret(key),
+            "fingerprint": key_fingerprint(key),
+            "verdict": "unclear",
+            "http_status": None,
+            "latency_ms": None,
+            "credit_info": "N/A",
+            "models_count": 0,
+            "models": [],
+        }
+        try:
+            with httpx.Client(timeout=20.0) as client:
+                # Step 1: GET /models
+                start = time.time()
+                r1 = client.get(
+                    "https://api.groq.com/openai/v1/models",
+                    headers={"Authorization": f"Bearer {key}"}
+                )
+                latency = int((time.time() - start) * 1000)
+                result["http_status"] = r1.status_code
+                result["latency_ms"] = latency
+                if r1.status_code != 200:
+                    error_text = r1.text
+                    result["verdict"] = classify_verdict(r1.status_code, error_text, dict(r1.headers))
+                    result["credit_info"] = redact_secrets(error_text[:200])
+                    return result
+                models_data = r1.json().get("data", [])
+                chat_models = [m["id"] for m in models_data if m.get("id") and "whisper" not in m["id"].lower() and "guard" not in m["id"].lower() and "tts" not in m["id"].lower()]
+                result["models"] = chat_models
+                result["models_count"] = len(chat_models)
+                tokens_remaining = r1.headers.get("x-ratelimit-remaining-tokens", "N/A")
+                requests_remaining = r1.headers.get("x-ratelimit-remaining-requests", "N/A")
+                result["credit_info"] = f"1-tok live check | Tokens: {tokens_remaining}, Requests: {requests_remaining}"
+                # Step 2: 1-token POST /chat/completions
+                if chat_models:
+                    test_model = chat_models[0]
+                    r2 = client.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                        json={"model": test_model, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1}
+                    )
+                    if r2.status_code == 200:
+                        result["verdict"] = "works"
+                        result["credit_info"] += f" | Model tested: {test_model}"
+                    else:
+                        error_text = r2.text
+                        result["verdict"] = classify_verdict(r2.status_code, error_text, dict(r2.headers))
+                        result["credit_info"] = redact_secrets(error_text[:200])
+                else:
+                    result["verdict"] = "unclear"
+                    result["credit_info"] = "No chat models found"
+        except Exception as e:
+            result["verdict"] = "unclear"
+            result["credit_info"] = redact_secrets(str(e)[:200])
+        return result
+
+    def test_anthropic_key(key: str) -> dict:
+        """Test Anthropic key: GET /models + 1-token POST /messages."""
+        result = {
+            "provider": "anthropic",
+            "source": "Auto-Update Pool",
+            "masked": mask_secret(key),
+            "fingerprint": key_fingerprint(key),
+            "verdict": "unclear",
+            "http_status": None,
+            "latency_ms": None,
+            "credit_info": "N/A",
+            "models_count": 0,
+            "models": [],
+        }
+        try:
+            with httpx.Client(timeout=20.0) as client:
+                # Step 1: GET /models
+                start = time.time()
+                r1 = client.get(
+                    "https://api.anthropic.com/v1/models?limit=50",
+                    headers={"x-api-key": key, "anthropic-version": "2023-06-01"}
+                )
+                latency = int((time.time() - start) * 1000)
+                result["http_status"] = r1.status_code
+                result["latency_ms"] = latency
+                if r1.status_code != 200:
+                    error_text = r1.text
+                    result["verdict"] = classify_verdict(r1.status_code, error_text, dict(r1.headers))
+                    result["credit_info"] = redact_secrets(error_text[:200])
+                    return result
+                models_data = r1.json().get("data", [])
+                claude_models = [m["id"] for m in models_data if m.get("id")]
+                result["models"] = claude_models
+                result["models_count"] = len(claude_models)
+                tokens_remaining = r1.headers.get("anthropic-ratelimit-tokens-remaining", "N/A")
+                requests_remaining = r1.headers.get("anthropic-ratelimit-requests-remaining", "N/A")
+                result["credit_info"] = f"1-tok live check | Tokens: {tokens_remaining}, Requests: {requests_remaining}"
+                # Step 2: 1-token POST /messages (pick cheapest model: haiku first, else first model)
+                test_model = None
+                for m in claude_models:
+                    if "haiku" in m.lower():
+                        test_model = m
+                        break
+                if not test_model and claude_models:
+                    test_model = claude_models[0]
+                if test_model:
+                    r2 = client.post(
+                        "https://api.anthropic.com/v1/messages",
+                        headers={"x-api-key": key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
+                        json={"model": test_model, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1}
+                    )
+                    if r2.status_code == 200:
+                        result["verdict"] = "works"
+                        result["credit_info"] += f" | Model tested: {test_model}"
+                    else:
+                        error_text = r2.text
+                        result["verdict"] = classify_verdict(r2.status_code, error_text, dict(r2.headers))
+                        result["credit_info"] = redact_secrets(error_text[:200])
+                else:
+                    result["verdict"] = "unclear"
+                    result["credit_info"] = "No Claude models found"
+        except Exception as e:
+            result["verdict"] = "unclear"
+            result["credit_info"] = redact_secrets(str(e)[:200])
+        return result
+
+    def test_google_key(key: str) -> dict:
+        """Test Google key: GET /models + 1-token POST /generateContent."""
+        result = {
+            "provider": "google",
+            "source": "Auto-Update Pool",
+            "masked": mask_secret(key),
+            "fingerprint": key_fingerprint(key),
+            "verdict": "unclear",
+            "http_status": None,
+            "latency_ms": None,
+            "credit_info": "N/A",
+            "models_count": 0,
+            "models": [],
+        }
+        try:
+            with httpx.Client(timeout=20.0) as client:
+                # Step 1: GET /models
+                start = time.time()
+                auth_header = {"x-goog-api-key": key} if not key.startswith("ya29.") else {"Authorization": f"Bearer {key}"}
+                r1 = client.get(
+                    "https://generativelanguage.googleapis.com/v1beta/models?pageSize=100",
+                    headers=auth_header
+                )
+                latency = int((time.time() - start) * 1000)
+                result["http_status"] = r1.status_code
+                result["latency_ms"] = latency
+                if r1.status_code != 200:
+                    error_text = r1.text
+                    result["verdict"] = classify_verdict(r1.status_code, error_text, dict(r1.headers))
+                    result["credit_info"] = redact_secrets(error_text[:200])
+                    return result
+                models_data = r1.json().get("models", [])
+                gemini_models = [m["name"] for m in models_data if m.get("name") and "generateContent" in m.get("supportedGenerationMethods", [])]
+                result["models"] = gemini_models
+                result["models_count"] = len(gemini_models)
+                result["credit_info"] = f"1-tok live check | {len(gemini_models)} Gemini text models found"
+                # Step 2: 1-token POST /generateContent (try gemini-2.5-flash / gemini-flash-lite-latest or first model)
+                test_model = None
+                for m in gemini_models:
+                    if "gemini-2.5-flash" in m or "gemini-flash-lite-latest" in m:
+                        test_model = m
+                        break
+                if not test_model and gemini_models:
+                    test_model = gemini_models[0]
+                if test_model:
+                    r2 = client.post(
+                        f"https://generativelanguage.googleapis.com/v1beta/{test_model}:generateContent",
+                        headers={**auth_header, "Content-Type": "application/json"},
+                        json={"contents": [{"parts": [{"text": "hi"}]}], "generationConfig": {"maxOutputTokens": 1}}
+                    )
+                    if r2.status_code == 200:
+                        result["verdict"] = "works"
+                        result["credit_info"] += f" | Model tested: {test_model}"
+                    else:
+                        error_text = r2.text
+                        result["verdict"] = classify_verdict(r2.status_code, error_text, dict(r2.headers))
+                        result["credit_info"] = redact_secrets(error_text[:200])
+                else:
+                    result["verdict"] = "unclear"
+                    result["credit_info"] = "No Gemini text models found"
+        except Exception as e:
+            result["verdict"] = "unclear"
+            result["credit_info"] = redact_secrets(str(e)[:200])
+        return result
+
+    # Collect all keys to test
+    test_tasks = []
+    for k in pool.keys:
+        test_tasks.append(("groq", k))
+    try:
+        au_store = load_auto_update_store()
+        for k in au_store.get("keys", {}).get("anthropic", []):
+            test_tasks.append(("anthropic", k))
+        for k in au_store.get("keys", {}).get("google", []):
+            test_tasks.append(("google", k))
+    except Exception:
+        pass
+
+    if not test_tasks:
+        return jsonify(ok=False, error="No keys found to test"), 400
+
+    # Run tests in parallel (max 8 workers)
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        futures = []
+        for provider, key in test_tasks:
+            if provider == "groq":
+                futures.append(executor.submit(test_groq_key, key))
+            elif provider == "anthropic":
+                futures.append(executor.submit(test_anthropic_key, key))
+            elif provider == "google":
+                futures.append(executor.submit(test_google_key, key))
+        for f in concurrent.futures.as_completed(futures):
+            try:
+                results.append(f.result())
+            except Exception:
+                pass
+
+    # Calculate summary stats
+    summary = {"works": 0, "nocredit": 0, "rejected": 0, "throttled": 0, "unclear": 0}
+    for r in results:
+        verdict = r.get("verdict", "unclear")
+        summary[verdict] = summary.get(verdict, 0) + 1
+
+    return jsonify(ok=True, summary=summary, results=results)
 
 # ─────────────── CHAT PERSISTENCE ────────────────
 # Saves all chats to ~/.groq/chats/ as JSON files.
