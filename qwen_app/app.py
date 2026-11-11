@@ -1,4 +1,4 @@
-"""Modern Groq Chatbot Server — Version 09.
+"""Modern Groq Chatbot Server — Version 10.
 
 Features:
 - Groq Thunderstrike SVG Favicon & Brand Icon
@@ -9,6 +9,7 @@ Features:
 - Dynamic Port Allocation (checks busy ports, binds first free)
 - Live Groq API Spend Ledger & Token Tracking
 - Raw Terminal Keyboard Controls ('q' to quit, 'c' for browser)
+- Self-Update Payload Dispatcher (chunked code updates to work around token limits)
 """
 import base64
 import hashlib
@@ -18,6 +19,7 @@ import os
 import queue
 import re
 import select
+import shutil
 import socket
 import subprocess
 import sys
@@ -41,8 +43,55 @@ STATE_FILE = HOME / "key_state.json"
 LEDGER_FILE = HOME / "spend_ledger.json"
 PORT_FILE = HOME / "active_port"
 URL_FILE = HOME / "app_url"
+REPO_DIR = Path(__file__).resolve().parent          # qwen_app/ directory
+GIT_ROOT = REPO_DIR.parent                          # the git repository root
+UPDATE_DIR = HOME / "incoming_update"
+CHATS_DIR = HOME / "chats"
+VERSION_FILE = GIT_ROOT / "version.json"
 
-VERSION = "09"
+# ── Version Management ──────────────────────────────
+def load_app_version() -> int:
+    """Read the current version number from version.json."""
+    try:
+        if VERSION_FILE.exists():
+            data = json.loads(VERSION_FILE.read_text(encoding="utf-8"))
+            return int(data.get("version", 1))
+    except Exception:
+        pass
+    return 1
+
+def bump_app_version(files_changed: list[str], message: str = "") -> int:
+    """Increment the version, write version.json, return new version."""
+    global VERSION
+    try:
+        if VERSION_FILE.exists():
+            data = json.loads(VERSION_FILE.read_text(encoding="utf-8"))
+        else:
+            data = {"version": 0, "log": []}
+    except Exception:
+        data = {"version": 0, "log": []}
+
+    new_v = int(data.get("version", 0)) + 1
+    data["version"] = new_v
+    data["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    log = data.get("log", [])
+    log.append({
+        "version": new_v,
+        "timestamp": data["updated_at"],
+        "message": message or f"Update v{new_v}",
+        "files": files_changed
+    })
+    data["log"] = log[-50:]  # keep last 50 entries
+
+    tmp = VERSION_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp.replace(VERSION_FILE)
+
+    VERSION = f"v{new_v}"
+    return new_v
+
+VERSION = f"v{load_app_version()}"
+AUTO_UPDATE_REPO = "markoboskoauroville/groq-auto-update"
 DEFAULT_MODEL = "qwen/qwen3.8-27b"
 DEFAULT_PORT = 8765
 MAX_MESSAGES = 80
@@ -841,6 +890,685 @@ def reset_keys():
     pool.reset()
     return jsonify(ok=True, count=len(pool.keys), items=pool.status_rich(), message="Key cooldowns reset.")
 
+# ─────────────── CHAT PERSISTENCE ────────────────
+# Saves all chats to ~/.groq/chats/ as JSON files.
+# Not mirrored to GitHub — local only.
+
+def _chat_path(chat_id: str) -> Path:
+    """Safe path for a chat file. Rejects traversal."""
+    safe = re.sub(r"[^A-Za-z0-9_-]", "", chat_id)
+    if not safe:
+        safe = "unknown"
+    return CHATS_DIR / f"{safe}.json"
+
+def _auto_title(messages: list) -> str:
+    """Generate a title from the first user message."""
+    for m in messages:
+        if m.get("role") == "user":
+            text = (m.get("content") or "").strip()
+            # Strip attached file content
+            if "--- FILE:" in text:
+                text = text.split("\n\n")[-1].strip()
+            if text:
+                title = text[:50]
+                if len(text) > 50:
+                    title = title.rsplit(" ", 1)[0] + "…"
+                return title
+    return "New Chat"
+
+@app.get("/api/chats")
+def list_chats():
+    """List all saved chats (metadata only, no messages)."""
+    CHATS_DIR.mkdir(parents=True, exist_ok=True)
+    chats = []
+    for f in sorted(CHATS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            chats.append({
+                "id": data.get("id", f.stem),
+                "title": data.get("title", "Untitled"),
+                "message_count": len(data.get("messages", [])),
+                "updated_at": data.get("updated_at", ""),
+                "created_at": data.get("created_at", ""),
+            })
+        except Exception:
+            pass
+    return jsonify(ok=True, chats=chats, count=len(chats))
+
+@app.get("/api/chats/<chat_id>")
+def get_chat(chat_id):
+    """Load a specific chat with all messages."""
+    path = _chat_path(chat_id)
+    if not path.exists():
+        return jsonify(error=f"Chat '{chat_id}' not found"), 404
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return jsonify(ok=True, chat=data)
+    except Exception as exc:
+        return jsonify(error=str(exc)), 500
+
+@app.post("/api/chats/save")
+def save_chat():
+    """
+    Save or update a chat.
+    JSON Body: { "id": "s_123", "title": "...", "messages": [...] }
+    If title is empty/missing, auto-generates from first user message.
+    """
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify(error="No data"), 400
+
+    chat_id = (data.get("id") or "").strip()
+    if not chat_id:
+        return jsonify(error="Missing chat id"), 400
+
+    messages = data.get("messages", [])
+    title = (data.get("title") or "").strip()
+
+    # Auto-title if empty
+    if not title:
+        title = _auto_title(messages)
+
+    now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    path = _chat_path(chat_id)
+
+    # Preserve created_at if chat already exists
+    created_at = now
+    if path.exists():
+        try:
+            old = json.loads(path.read_text(encoding="utf-8"))
+            created_at = old.get("created_at", now)
+        except Exception:
+            pass
+
+    chat_data = {
+        "id": chat_id,
+        "title": title,
+        "messages": messages,
+        "message_count": len(messages),
+        "created_at": created_at,
+        "updated_at": now,
+    }
+
+    CHATS_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(chat_data, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
+
+    return jsonify(ok=True, id=chat_id, title=title, message_count=len(messages))
+
+@app.post("/api/chats/rename")
+def rename_chat():
+    """Rename a chat. JSON Body: { "id": "...", "title": "New Title" }"""
+    data = request.get_json(silent=True) or {}
+    chat_id = (data.get("id") or "").strip()
+    new_title = (data.get("title") or "").strip()
+
+    if not chat_id:
+        return jsonify(error="Missing chat id"), 400
+    if not new_title:
+        return jsonify(error="Missing new title"), 400
+
+    path = _chat_path(chat_id)
+    if not path.exists():
+        return jsonify(error=f"Chat '{chat_id}' not found"), 404
+
+    try:
+        chat_data = json.loads(path.read_text(encoding="utf-8"))
+        chat_data["title"] = new_title
+        chat_data["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(chat_data, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
+        return jsonify(ok=True, id=chat_id, title=new_title)
+    except Exception as exc:
+        return jsonify(error=str(exc)), 500
+
+@app.post("/api/chats/delete")
+def delete_chat():
+    """Delete a chat. JSON Body: { "id": "..." }"""
+    data = request.get_json(silent=True) or {}
+    chat_id = (data.get("id") or "").strip()
+    if not chat_id:
+        return jsonify(error="Missing chat id"), 400
+
+    path = _chat_path(chat_id)
+    if path.exists():
+        path.unlink()
+        return jsonify(ok=True, id=chat_id, message="Chat deleted")
+    return jsonify(error="Chat not found"), 404
+
+# ─────────────── SELF-UPDATE ENGINE ───────────────
+# Accepts code in chunks, assembles them, and writes the final file.
+# This works around output token limits by letting an AI send large
+# files in 3-4 small pieces that are stitched together server-side.
+#
+# CI PIPELINE: every assembled file must pass all checks before it
+# can be written. If any check fails the write is rejected and the
+# chunks stay in staging so the sender can fix them.
+
+import ast as _ast  # for Python CI validation
+
+# Allowlist: only these files may be updated (relative to REPO_DIR)
+UPDATABLE_FILES = {"app.py", "index.html"}
+
+# ── CI Validation ────────────────────────────────────
+def ci_validate_python(code: str, filename: str) -> tuple[bool, list[str]]:
+    """Validate Python code: syntax, truncation, structural sanity."""
+    errors = []
+
+    # 1. Non-empty
+    if not code.strip():
+        errors.append("EMPTY: file is empty or whitespace-only")
+        return False, errors
+
+    # 2. AST parse — catches all syntax errors
+    try:
+        _ast.parse(code, filename=filename)
+    except SyntaxError as exc:
+        errors.append(f"SYNTAX ERROR: {exc.msg} (line {exc.lineno}, col {exc.offset})")
+        return False, errors
+
+    # 3. Truncation heuristics
+    stripped = code.rstrip()
+    # Unbalanced triple-quotes (odd count)
+    for q in ('"""', "'''"):
+        if stripped.count(q) % 2 != 0:
+            errors.append(f"TRUNCATED: unbalanced {q} — file likely cut mid-string")
+    # Unbalanced brackets
+    for o, c, name in [("(", ")", "parentheses"), ("[", "]", "brackets"), ("{", "}", "braces")]:
+        if stripped.count(o) != stripped.count(c):
+            errors.append(f"TRUNCATED: unbalanced {name} ({stripped.count(o)} open vs {stripped.count(c)} close)")
+    # Ends mid-line (no newline at end, last line not a comment/blank/closing)
+    last_line = stripped.split("\n")[-1].strip() if stripped else ""
+    if last_line and not last_line.startswith("#") and last_line not in ("", ")", "]", "}", "pass", "..."):
+        if not last_line.endswith(":") and not last_line.endswith(")") and not last_line.endswith("'") \
+           and not last_line.endswith('"') and "main()" not in last_line and "if __name__" not in last_line:
+            # Not conclusive on its own, just a warning
+            pass
+
+    # 4. Structural sanity — must have basic Python structure
+    if "import " not in code and "from " not in code:
+        errors.append("STRUCTURE: no import statements found — likely truncated or wrong file")
+    if "def " not in code and "class " not in code:
+        errors.append("STRUCTURE: no function or class definitions found")
+
+    return len(errors) == 0, errors
+
+
+def ci_validate_html(code: str, filename: str) -> tuple[bool, list[str]]:
+    """Validate HTML code: tag balance, truncation, structural sanity."""
+    errors = []
+
+    # 1. Non-empty
+    if not code.strip():
+        errors.append("EMPTY: file is empty or whitespace-only")
+        return False, errors
+
+    lower = code.lower()
+
+    # 2. Must end with </html>
+    if not lower.rstrip().endswith("</html>"):
+        errors.append("TRUNCATED: file does not end with </html>")
+
+    # 3. Critical tags must be present and balanced
+    for tag in ("html", "head", "body"):
+        opens = lower.count(f"<{tag}")
+        closes = lower.count(f"</{tag}>")
+        if opens == 0:
+            errors.append(f"STRUCTURE: missing <{tag}> tag")
+        elif opens != closes:
+            errors.append(f"TRUNCATED: unbalanced <{tag}> ({opens} open vs {closes} close)")
+
+    # 4. Script tags balanced
+    script_opens = lower.count("<script")
+    script_closes = lower.count("</script>")
+    if script_opens != script_closes:
+        errors.append(f"TRUNCATED: unbalanced <script> ({script_opens} open vs {script_closes} close)")
+
+    # 5. JS brace balance inside <script> blocks (rough check)
+    import re as _re
+    scripts = _re.findall(r"<script[^>]*>(.*?)</script>", code, _re.DOTALL | _re.IGNORECASE)
+    for i, scr in enumerate(scripts):
+        opens = scr.count("{")
+        closes = scr.count("}")
+        if opens != closes:
+            errors.append(f"TRUNCATED: JS braces unbalanced in <script> block {i+1} ({opens} open vs {closes} close)")
+
+    # 6. Must have a <title>
+    if "<title>" not in lower:
+        errors.append("STRUCTURE: missing <title> tag")
+
+    return len(errors) == 0, errors
+
+
+def ci_validate_size(new_code: str, old_path: Path, filename: str) -> tuple[bool, list[str]]:
+    """Size sanity check: new file must not be dramatically smaller than old."""
+    errors = []
+    if old_path.exists():
+        old_size = old_path.stat().st_size
+        new_size = len(new_code.encode("utf-8"))
+        if old_size > 0:
+            ratio = new_size / old_size
+            if ratio < 0.30:
+                errors.append(
+                    f"SIZE: new {filename} is {new_size:,} bytes vs old {old_size:,} bytes "
+                    f"({ratio:.0%}) — looks like severe truncation"
+                )
+            elif ratio < 0.50:
+                errors.append(
+                    f"SIZE WARNING: new {filename} is {new_size:,} bytes vs old {old_size:,} bytes "
+                    f"({ratio:.0%}) — possibly truncated"
+                )
+    return len(errors) == 0, errors
+
+
+def ci_run_all(code: str, filename: str) -> tuple[bool, list[str]]:
+    """Run the full CI pipeline on assembled code. Returns (passed, errors)."""
+    all_errors = []
+
+    # File-type-specific checks
+    if filename.endswith(".py"):
+        ok, errs = ci_validate_python(code, filename)
+        all_errors.extend(errs)
+    elif filename.endswith(".html") or filename.endswith(".htm"):
+        ok, errs = ci_validate_html(code, filename)
+        all_errors.extend(errs)
+
+    # Size check against current file on disk
+    ok, errs = ci_validate_size(code, REPO_DIR / filename, filename)
+    all_errors.extend(errs)
+
+    passed = len(all_errors) == 0
+    return passed, all_errors
+
+
+# ── Git Operations ───────────────────────────────────
+def git_run(args: list[str], timeout: int = 30) -> tuple[bool, str]:
+    """Run a git command in the repo root. Returns (success, output)."""
+    try:
+        env = os.environ.copy()
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        res = subprocess.run(
+            ["git"] + args,
+            capture_output=True, text=True, timeout=timeout,
+            cwd=str(GIT_ROOT), env=env
+        )
+        combined = (res.stdout + "\n" + res.stderr).strip()
+        return res.returncode == 0, combined
+    except Exception as exc:
+        return False, str(exc)
+
+
+def git_commit_and_push(files: list[str], message: str) -> tuple[bool, list[str]]:
+    """Stage files, commit, and push to both origin AND the auto-update repo."""
+    log = []
+
+    # Stage the specific files
+    for f in files:
+        ok, out = git_run(["add", f])
+        log.append(f"git add {f}: {'OK' if ok else 'FAIL'} — {out}")
+        if not ok:
+            return False, log
+
+    # Also stage version.json
+    ok, out = git_run(["add", "version.json"])
+    log.append(f"git add version.json: {'OK' if ok else 'FAIL'} — {out}")
+
+    # Check if there is anything to commit
+    ok, out = git_run(["diff", "--cached", "--stat"])
+    if not out.strip():
+        log.append("Nothing to commit (files unchanged)")
+        return True, log
+
+    # Commit
+    ok, out = git_run(["commit", "-m", message])
+    log.append(f"git commit: {'OK' if ok else 'FAIL'} — {out[:200]}")
+    if not ok:
+        return False, log
+
+    # Push to origin (dev repo)
+    ok, out = git_run(["push", "origin", "main"])
+    log.append(f"git push origin: {'OK' if ok else 'FAIL'} — {out[:200]}")
+
+    # Ensure the auto-update remote exists
+    ok_remote, _ = git_run(["remote", "get-url", "auto-update"])
+    if not ok_remote:
+        git_run(["remote", "add", "auto-update",
+                 f"https://github.com/{AUTO_UPDATE_REPO}.git"])
+        log.append(f"Added remote 'auto-update' → {AUTO_UPDATE_REPO}")
+
+    # Push to auto-update repo
+    ok2, out2 = git_run(["push", "auto-update", "main"])
+    log.append(f"git push auto-update: {'OK' if ok2 else 'FAIL'} — {out2[:200]}")
+
+    return (ok or ok2), log
+
+@app.get("/api/self_update/status")
+def update_status():
+    """Return current chunks in the staging area and updatable files."""
+    UPDATE_DIR.mkdir(parents=True, exist_ok=True)
+    chunks = sorted(UPDATE_DIR.glob("chunk_*_part*.txt"))
+    staged = {}
+    for c in chunks:
+        # Parse: chunk_{filename}_part{NNN}.txt
+        name = c.name
+        parts = name.split("_part")
+        if len(parts) == 2:
+            file_part = name[len("chunk_"):]
+            file_name = file_part.rsplit("_part", 1)[0]
+            part_num = parts[1].replace(".txt", "")
+            staged.setdefault(file_name, []).append({
+                "part": int(part_num),
+                "size": c.stat().st_size,
+                "path": str(c)
+            })
+    # Sort each file's parts
+    for fname in staged:
+        staged[fname].sort(key=lambda x: x["part"])
+
+    return jsonify(
+        ok=True,
+        updatable_files=list(UPDATABLE_FILES),
+        staged=staged,
+        update_dir=str(UPDATE_DIR)
+    )
+
+@app.post("/api/self_update/chunk")
+def update_chunk():
+    """
+    Receives a chunk of code.
+    JSON Body: { "file": "app.py", "part": 1, "content": "..." }
+    """
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify(error="No JSON data received"), 400
+
+    filename = (data.get("file") or "").strip()
+    part = data.get("part", 0)
+    content = data.get("content", "")
+
+    if not filename:
+        return jsonify(error="Missing 'file' field"), 400
+
+    # Validate filename against allowlist
+    if filename not in UPDATABLE_FILES:
+        return jsonify(error=f"File '{filename}' is not in the updatable allowlist: {sorted(UPDATABLE_FILES)}"), 403
+
+    # Sanitize: reject path traversal
+    if "/" in filename or "\\" in filename or filename.startswith("."):
+        return jsonify(error="Invalid filename"), 400
+
+    if not content:
+        return jsonify(error="Empty content — nothing to save"), 400
+
+    try:
+        part = int(part)
+    except (TypeError, ValueError):
+        return jsonify(error="'part' must be an integer"), 400
+
+    # Save chunk
+    UPDATE_DIR.mkdir(parents=True, exist_ok=True)
+    chunk_path = UPDATE_DIR / f"chunk_{filename}_part{part:03d}.txt"
+    chunk_path.write_text(content, encoding="utf-8")
+
+    # Compute hash for verification
+    chunk_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
+
+    # Count existing chunks for this file
+    existing = sorted(UPDATE_DIR.glob(f"chunk_{filename}_part*.txt"))
+    parts_list = [c.name for c in existing]
+
+    broadcast_event({
+        "type": "self_update_chunk",
+        "file": filename,
+        "part": part,
+        "size": len(content),
+        "hash": chunk_hash,
+        "total_parts": len(existing)
+    })
+
+    return jsonify(
+        ok=True,
+        status="chunk_saved",
+        file=filename,
+        saved_part=part,
+        bytes=len(content),
+        hash=chunk_hash,
+        total_chunks=len(existing),
+        existing_parts=parts_list
+    )
+
+@app.post("/api/self_update/assemble")
+def assemble_update():
+    """
+    CI-gated assembly: stitch chunks → run CI → backup → write → git commit+push → bump version.
+    JSON Body: { "file": "app.py" }
+    Optional: { "expected_hash": "abc123...", "commit_message": "..." }
+    """
+    data = request.get_json(silent=True) or {}
+    filename = (data.get("file") or "").strip()
+    expected_hash = (data.get("expected_hash") or "").strip()
+    commit_msg = (data.get("commit_message") or "").strip()
+
+    if not filename:
+        return jsonify(error="Missing 'file' field"), 400
+
+    if filename not in UPDATABLE_FILES:
+        return jsonify(error=f"File '{filename}' is not in the updatable allowlist"), 403
+
+    target_path = REPO_DIR / filename
+    chunks = sorted(UPDATE_DIR.glob(f"chunk_{filename}_part*.txt"))
+
+    if not chunks:
+        return jsonify(error=f"No chunks found for '{filename}' in staging area"), 404
+
+    # ── STITCH ──
+    final_content = ""
+    part_details = []
+    for c in chunks:
+        part_text = c.read_text(encoding="utf-8")
+        final_content += part_text
+        part_details.append({"name": c.name, "size": len(part_text)})
+
+    assembled_hash = hashlib.sha256(final_content.encode("utf-8")).hexdigest()
+
+    # ── HASH CHECK ──
+    if expected_hash and not assembled_hash.startswith(expected_hash):
+        return jsonify(
+            error="HASH MISMATCH — assembled content does not match expected hash. Chunks NOT written.",
+            ci_passed=False,
+            assembled_hash=assembled_hash,
+            expected_hash=expected_hash,
+            total_size=len(final_content),
+            parts_used=len(chunks)
+        ), 409
+
+    # ── CI PIPELINE ──
+    ci_passed, ci_errors = ci_run_all(final_content, filename)
+    if not ci_passed:
+        broadcast_event({
+            "type": "self_update_ci_failed",
+            "file": filename,
+            "errors": ci_errors
+        })
+        return jsonify(
+            ok=False,
+            ci_passed=False,
+            status="ci_failed",
+            error="CI VALIDATION FAILED — file NOT written. Fix the errors and try again.",
+            ci_errors=ci_errors,
+            file=filename,
+            size=len(final_content),
+            hash=assembled_hash
+        ), 422
+
+    # ── BACKUP ──
+    backup_name = None
+    if target_path.exists():
+        backup_dir = UPDATE_DIR / "backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        backup_name = f"{filename}.backup_{int(time.time())}"
+        backup_path = backup_dir / backup_name
+        shutil.copy2(str(target_path), str(backup_path))
+
+    # ── WRITE ──
+    target_path.write_text(final_content, encoding="utf-8")
+
+    # ── CLEANUP CHUNKS ──
+    for c in chunks:
+        c.unlink()
+
+    # ── BUMP VERSION ──
+    new_version = bump_app_version(
+        files_changed=[filename],
+        message=commit_msg or f"Update {filename}"
+    )
+
+    # ── GIT COMMIT + PUSH ──
+    git_msg = commit_msg or f"v{new_version}: Update {filename} via Self-Update CI pipeline"
+    git_ok, git_log = git_commit_and_push(
+        files=[f"qwen_app/{filename}"],
+        message=git_msg
+    )
+
+    broadcast_event({
+        "type": "self_update_complete",
+        "file": filename,
+        "size": len(final_content),
+        "hash": assembled_hash[:16],
+        "parts_assembled": len(part_details),
+        "version": new_version,
+        "ci_passed": True,
+        "git_pushed": git_ok
+    })
+
+    return jsonify(
+        ok=True,
+        ci_passed=True,
+        status="deployed",
+        message=f"CI PASSED ✓ — {filename} deployed as v{new_version} ({len(final_content):,} chars, {len(part_details)} parts)",
+        file=filename,
+        size=len(final_content),
+        hash=assembled_hash,
+        version=new_version,
+        version_str=f"v{new_version}",
+        backup=backup_name,
+        parts_assembled=part_details,
+        git_ok=git_ok,
+        git_log=git_log,
+        ci_errors=[]
+    )
+
+@app.post("/api/self_update/discard")
+def discard_chunks():
+    """
+    Discard all staged chunks for a specific file (or all files).
+    JSON Body: { "file": "app.py" } or { "file": "*" } for all.
+    """
+    data = request.get_json(silent=True) or {}
+    filename = (data.get("file") or "").strip()
+
+    if not filename:
+        return jsonify(error="Missing 'file' field"), 400
+
+    if filename == "*":
+        # Discard everything
+        chunks = list(UPDATE_DIR.glob("chunk_*_part*.txt"))
+    else:
+        chunks = list(UPDATE_DIR.glob(f"chunk_{filename}_part*.txt"))
+
+    removed = 0
+    for c in chunks:
+        c.unlink()
+        removed += 1
+
+    return jsonify(ok=True, discarded=removed, file=filename)
+
+@app.get("/api/self_update/preview")
+def preview_assembled():
+    """
+    Preview what the assembled file would look like without writing it.
+    Query param: ?file=app.py
+    """
+    filename = (request.args.get("file") or "").strip()
+    if not filename:
+        return jsonify(error="Missing 'file' query param"), 400
+
+    chunks = sorted(UPDATE_DIR.glob(f"chunk_{filename}_part*.txt"))
+    if not chunks:
+        return jsonify(error=f"No chunks found for '{filename}'"), 404
+
+    final_content = ""
+    for c in chunks:
+        final_content += c.read_text(encoding="utf-8")
+
+    assembled_hash = hashlib.sha256(final_content.encode("utf-8")).hexdigest()
+
+    return jsonify(
+        ok=True,
+        file=filename,
+        size=len(final_content),
+        lines=final_content.count("\n") + 1,
+        hash=assembled_hash,
+        preview_head=final_content[:500],
+        preview_tail=final_content[-500:] if len(final_content) > 500 else ""
+    )
+
+@app.get("/api/self_update/backups")
+def list_backups():
+    """List available backups for all updatable files."""
+    backup_dir = UPDATE_DIR / "backups"
+    if not backup_dir.exists():
+        return jsonify(ok=True, backups=[])
+
+    backups = []
+    for b in sorted(backup_dir.iterdir(), reverse=True):
+        backups.append({
+            "name": b.name,
+            "size": b.stat().st_size,
+            "modified": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(b.stat().st_mtime))
+        })
+
+    return jsonify(ok=True, backups=backups)
+
+@app.post("/api/self_update/restore")
+def restore_backup():
+    """
+    Restore a file from backup.
+    JSON Body: { "backup": "app.py.backup_1699700000" }
+    """
+    data = request.get_json(silent=True) or {}
+    backup_name = (data.get("backup") or "").strip()
+
+    if not backup_name:
+        return jsonify(error="Missing 'backup' field"), 400
+
+    # Sanitize
+    if "/" in backup_name or "\\" in backup_name:
+        return jsonify(error="Invalid backup name"), 400
+
+    backup_path = UPDATE_DIR / "backups" / backup_name
+    if not backup_path.exists():
+        return jsonify(error=f"Backup '{backup_name}' not found"), 404
+
+    # Determine the original filename from backup name (e.g. "app.py.backup_123")
+    original_name = backup_name.split(".backup_")[0]
+    if original_name not in UPDATABLE_FILES:
+        return jsonify(error=f"Cannot restore: '{original_name}' not in updatable allowlist"), 403
+
+    target_path = REPO_DIR / original_name
+    content = backup_path.read_text(encoding="utf-8")
+    target_path.write_text(content, encoding="utf-8")
+
+    return jsonify(
+        ok=True,
+        message=f"Restored '{original_name}' from backup '{backup_name}'",
+        file=original_name,
+        size=len(content)
+    )
+# ──────────────────────────────────────────────────
+
 # GitHub Read-Only Operations
 def run_gh(args, timeout=15):
     try:
@@ -948,6 +1676,21 @@ def index():
     page = Path(__file__).with_name("index.html").read_text(encoding="utf-8")
     page = page.replace("__DEFAULT_MODEL__", DEFAULT_MODEL).replace("__VERSION__", VERSION)
     return Response(page, mimetype="text/html", headers={"Cache-Control": "no-store"})
+
+@app.get("/api/version")
+def get_version():
+    """Return current version info, update history, and auto-update repo."""
+    try:
+        data = json.loads(VERSION_FILE.read_text(encoding="utf-8")) if VERSION_FILE.exists() else {}
+    except Exception:
+        data = {}
+    return jsonify(
+        version=data.get("version", 1),
+        version_str=VERSION,
+        updated_at=data.get("updated_at", ""),
+        auto_update_repo=AUTO_UPDATE_REPO,
+        log=data.get("log", [])[-10:]
+    )
 
 @app.get("/health")
 def health():

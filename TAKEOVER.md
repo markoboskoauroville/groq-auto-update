@@ -1,9 +1,10 @@
 # Groq AI Studio: takeover
 
 Repository: markoboskoauroville/groq_ai_studio (public, unpromoted: no README, no description; this file is the description).
-Status 11.11.2026: version 09 runs on this Mac, port 8765, `/health` answers `{"app":"groq-modern-chat","version":"09","ok":true}`.
+Status 11.11.2026: version v1 runs on this Mac, port 8765, `/health` answers `{"app":"groq-modern-chat","version":"v1","ok":true}`.
 Marko, 11.11.2026: "We are developing this app now." Nothing is compiled: it is Python and one HTML file, so there is no
 GitHub Actions build; it runs from source.
+Auto-update repo: `markoboskoauroville/groq-auto-update` (private). CI-validated updates push here automatically.
 
 ## What it is
 A local chat studio for the Groq API in the browser, started from the terminal with the command `qwen`. A small Flask server
@@ -27,8 +28,9 @@ cooldowns, `h` help.
 ## Files
 | File | Job |
 |---|---|
-| `qwen_app/app.py` | the server: key manager, failover, streaming chat, ledger, GitHub reads, backdoor, port finder, keyboard listener (about 1100 lines) |
-| `qwen_app/index.html` | the whole client: sidebar with sessions, spend, model select, zoom, Prose / Code Box toggle, attach and drag-drop, modals for keys, persona, GitHub, billing, settings (about 1700 lines, `__VERSION__` and `__DEFAULT_MODEL__` are replaced by the server) |
+| `qwen_app/app.py` | the server: key manager, failover, streaming chat, ledger, GitHub reads, backdoor, port finder, CI pipeline, self-update engine, chat persistence, version management (about 1900 lines) |
+| `qwen_app/index.html` | the whole client: sidebar with sessions, spend, model select, zoom, Prose / Code Box toggle, attach and drag-drop, modals for keys, persona, GitHub, billing, settings, self-update panel (about 1970 lines, `__VERSION__` and `__DEFAULT_MODEL__` are replaced by the server) |
+| `version.json` | current version number and update history log |
 | `groq_pool.py` | the older key pool module used by `groq-cli`, importable from any Python: `KeyPool().complete(messages)` / `.stream(messages)` |
 | `groq_cli.py`, `groq-cli`, `qwen`, `groq-chat` | the terminal clients and launchers |
 | `install.sh` | copies the code into ~/.groq, makes the venv, installs `requirements.txt`; reads no key |
@@ -37,7 +39,8 @@ The app expects to live in `~/.groq` (it inserts that folder in `sys.path` and k
 
 ## State on the Mac (never in git)
 `~/.groq/keys.txt` (keys, 600), `.env`, `key_state.json` (current key and cooldowns), `spend_ledger.json` (totals and the last
-100 requests), `active_port`, `app_url`, `venv/`. `.gitignore` blocks all of these.
+100 requests), `active_port`, `app_url`, `incoming_update/` (self-update staging), `chats/` (server-side chat logs), `venv/`.
+`.gitignore` blocks all of these.
 
 ## Keys
 Keys start with `gsk_`. The parser (`extract_keys_from_noise`) pulls every `gsk_...` of at least 20 characters out of any text:

@@ -10,3 +10,6 @@ groq-api.txt
 venv/
 __pycache__/
 *.pyc
+incoming_update/
+chats/
+.DS_Store
