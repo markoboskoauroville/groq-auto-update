@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec "${HOME}/.groq/venv/bin/python" "${HOME}/.groq/groq_cli.py" "$@"

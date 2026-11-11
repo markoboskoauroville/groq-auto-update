@@ -1,0 +1,12 @@
+# secrets and state never go to GitHub
+keys.txt
+.env
+*.env
+key_state.json
+spend_ledger.json
+active_port
+app_url
+groq-api.txt
+venv/
+__pycache__/
+*.pyc

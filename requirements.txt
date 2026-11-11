@@ -1,0 +1,4 @@
+flask
+waitress
+groq
+python-dotenv

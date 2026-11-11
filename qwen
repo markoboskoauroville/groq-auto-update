@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+GROQ_DIR="${HOME}/.groq"
+PY="${GROQ_DIR}/venv/bin/python"
+APP="${GROQ_DIR}/qwen_app/app.py"
+PORT="${GROQ_PORT:-8765}"
+
+if [[ ! -x "${PY}" || ! -f "${APP}" ]]; then
+    echo "Groq chat is not installed. Run 08-install_qwen.sh first." >&2
+    exit 1
+fi
+
+export PYTHONWARNINGS=ignore
+export PYTHONDONTWRITEBYTECODE=1
+exec "${PY}" -W ignore "${APP}" "${PORT}"

@@ -1,0 +1,1658 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Groq AI Studio</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.ico">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23131210'/%3E%3Cpath d='M35 7L17 34h14L25 57 47 26H33z' fill='%23f55036'/%3E%3Cpath d='M33 13L22 32h9l-3 17 14-21h-10z' fill='white' fill-opacity='.3'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Styrene+B:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════
+   GROQ AI STUDIO — Claude-inspired design
+   ═══════════════════════════════════════════════════ */
+:root {
+  --bg:          #1c1917;
+  --bg-panel:    #231f1c;
+  --bg-surface:  #2a2520;
+  --bg-hover:    #332e28;
+  --bg-input:    #2e2924;
+  --border:      rgba(255,255,255,0.08);
+  --border-mid:  rgba(255,255,255,0.14);
+
+  --text:        #e8e3dc;
+  --text-sub:    #a09890;
+  --text-dim:    #6b6460;
+
+  --accent:      #d97757;        /* Claude warm terracotta */
+  --accent-glow: rgba(217,119,87,0.18);
+  --accent-dark: rgba(217,119,87,0.08);
+  --accent-btn:  #c96845;
+
+  --user-bg:     #2e2924;
+  --user-border: rgba(217,119,87,0.22);
+
+  --green:  #6fba8a;
+  --amber:  #d4a259;
+  --red:    #e06c6c;
+  --blue:   #7ab8e0;
+
+  --font: -apple-system, "Inter", "Segoe UI", sans-serif;
+  --mono: "Fira Code", ui-monospace, Menlo, monospace;
+  --radius: 12px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 15px; line-height: 1.65; -webkit-font-smoothing: antialiased; overflow: hidden; }
+
+/* ── Layout ── */
+#app { display: flex; height: 100vh; }
+
+/* ══ SIDEBAR ══ */
+#sidebar {
+  width: 260px; flex-shrink: 0;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  transition: transform .22s ease, margin .22s ease;
+  z-index: 100;
+}
+#sidebar.collapsed { transform: translateX(-260px); margin-right: -260px; }
+
+.side-top {
+  padding: 14px 14px 10px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.brand {
+  display: flex; align-items: center; gap: 9px;
+  font-weight: 600; font-size: 15px; color: var(--text);
+  letter-spacing: -0.01em;
+}
+.brand-icon {
+  width: 30px; height: 30px;
+  background: linear-gradient(135deg, #e8835a, #c96845);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px;
+}
+.btn-ghost {
+  background: none; border: none; color: var(--text-sub);
+  cursor: pointer; padding: 6px; border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .15s;
+}
+.btn-ghost:hover { background: var(--bg-hover); color: var(--text); }
+
+.btn-new {
+  margin: 4px 10px 8px;
+  padding: 9px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-mid);
+  border-radius: 9px; color: var(--text);
+  font-size: 13px; font-weight: 500;
+  cursor: pointer; display: flex; align-items: center; gap: 8px;
+  transition: all .15s;
+}
+.btn-new:hover { background: var(--bg-hover); border-color: var(--accent); }
+
+.side-sessions { flex: 1; overflow-y: auto; padding: 4px 6px; }
+.side-sessions::-webkit-scrollbar { width: 4px; }
+.side-sessions::-webkit-scrollbar-thumb { background: var(--bg-hover); border-radius: 4px; }
+
+.session-item {
+  padding: 8px 10px; border-radius: 8px;
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; color: var(--text-sub); font-size: 13px;
+  margin-bottom: 1px; transition: all .15s;
+  user-select: none; position: relative;
+}
+.session-item:hover { background: var(--bg-hover); color: var(--text); }
+.session-item.active { background: var(--accent-dark); color: var(--text); }
+.session-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-del {
+  opacity: 0; background: none; border: none; color: var(--text-dim);
+  cursor: pointer; padding: 2px 5px; border-radius: 4px; font-size: 13px;
+}
+.session-item:hover .session-del { opacity: 1; }
+.session-del:hover { color: var(--red); }
+
+.side-footer {
+  border-top: 1px solid var(--border);
+  padding: 12px 10px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.spend-pill {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 9px; padding: 10px 12px;
+}
+.spend-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .06em; }
+.spend-value { font-size: 20px; font-weight: 700; color: var(--green); font-family: var(--mono); margin-top: 2px; }
+.spend-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+.side-actions { display: flex; gap: 6px; }
+.btn-sm {
+  flex: 1; padding: 7px 10px; background: var(--bg-surface);
+  border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text-sub); font-size: 12px; font-weight: 500;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px;
+  transition: all .15s;
+}
+.btn-sm:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border-mid); }
+
+/* ══ MAIN ══ */
+#main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+/* Top Nav Bar */
+#topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 20px; border-bottom: 1px solid var(--border);
+  background: var(--bg-panel); flex-shrink: 0; gap: 12px;
+}
+.topbar-left { display: flex; align-items: center; gap: 10px; }
+.topbar-right { display: flex; align-items: center; gap: 8px; }
+.btn-icon {
+  background: none; border: 1px solid var(--border);
+  color: var(--text-sub); width: 32px; height: 32px; border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all .15s; font-size: 15px;
+}
+.btn-icon:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border-mid); }
+.btn-icon.accent { border-color: var(--accent); color: var(--accent); }
+.btn-icon.accent:hover { background: var(--accent-dark); }
+
+.model-select {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  color: var(--text); padding: 5px 10px; border-radius: 7px;
+  font-size: 13px; outline: none; cursor: pointer;
+  transition: border-color .15s;
+}
+.model-select:focus { border-color: var(--accent); }
+
+/* Live status strip */
+#status-bar {
+  background: var(--bg-panel); border-bottom: 1px solid var(--border);
+  padding: 5px 20px; display: flex; align-items: center; gap: 20px;
+  font-size: 12px; color: var(--text-dim); flex-shrink: 0; flex-wrap: wrap;
+}
+.stat { display: flex; align-items: center; gap: 5px; }
+.stat-val { color: var(--text-sub); font-family: var(--mono); font-weight: 500; }
+.stat-spend { color: var(--green); font-weight: 700; }
+.live-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--green);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.35;} }
+
+/* ══ CHAT AREA ══ */
+#scroll-view {
+  flex: 1; overflow-y: auto; padding: 0;
+  scroll-behavior: smooth;
+}
+#scroll-view::-webkit-scrollbar { width: 5px; }
+#scroll-view::-webkit-scrollbar-thumb { background: var(--bg-hover); border-radius: 4px; }
+
+#chat-container { max-width: 760px; margin: 0 auto; padding: 32px 20px 16px; }
+
+/* Hero / Empty State */
+.hero {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 60px 20px 40px;
+}
+.hero-icon {
+  width: 56px; height: 56px; border-radius: 16px;
+  background: linear-gradient(135deg, #e8835a, #c96845);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px; margin-bottom: 20px;
+  box-shadow: 0 4px 24px rgba(217,119,87,.35);
+}
+.hero h1 { font-size: 26px; font-weight: 600; color: var(--text); margin-bottom: 10px; }
+.hero p { color: var(--text-sub); font-size: 15px; max-width: 420px; }
+.quick-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 24px; }
+.chip {
+  padding: 8px 16px; background: var(--bg-surface); border: 1px solid var(--border-mid);
+  border-radius: 100px; color: var(--text-sub); font-size: 13px; cursor: pointer;
+  transition: all .15s;
+}
+.chip:hover { background: var(--bg-hover); color: var(--text); border-color: var(--accent); }
+
+/* Messages */
+.msg-row { display: flex; flex-direction: column; margin-bottom: 28px; }
+.msg-row.user { align-items: flex-end; }
+.msg-row.assistant { align-items: flex-start; }
+
+/* User bubble */
+.user-bubble {
+  max-width: 72%; background: var(--user-bg);
+  border: 1px solid var(--user-border);
+  border-radius: 18px 18px 4px 18px;
+  padding: 12px 18px; color: var(--text);
+  font-size: 15px; line-height: 1.65;
+  white-space: pre-wrap; word-break: break-word;
+}
+.user-meta {
+  margin-top: 4px; display: flex; align-items: center; gap: 8px; padding-right: 4px;
+}
+.mode-badge {
+  font-size: 11px; color: var(--text-dim);
+  background: var(--bg-surface); border: 1px solid var(--border);
+  padding: 2px 8px; border-radius: 100px;
+}
+.mode-badge.code { color: var(--accent); border-color: var(--accent-glow); }
+
+/* Assistant message */
+.asst-row { display: flex; align-items: flex-start; gap: 12px; width: 100%; }
+.asst-avatar {
+  width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+  background: linear-gradient(135deg, #e8835a, #c96845);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; margin-top: 2px;
+}
+.asst-body { flex: 1; min-width: 0; }
+.asst-name { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+
+/* Markdown prose */
+.prose { color: var(--text); font-size: 15px; line-height: 1.72; word-break: break-word; }
+.prose p { margin-bottom: 12px; }
+.prose p:last-child { margin-bottom: 0; }
+.prose h2, .prose h3, .prose h4 { font-weight: 600; margin: 18px 0 8px; color: var(--text); }
+.prose h2 { font-size: 17px; }
+.prose h3 { font-size: 15px; }
+.prose ul, .prose ol { padding-left: 22px; margin-bottom: 12px; }
+.prose li { margin-bottom: 4px; }
+.prose strong { font-weight: 600; color: var(--text); }
+.prose em { font-style: italic; }
+.prose code {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 5px; padding: 1px 6px; font-family: var(--mono);
+  font-size: 13px; color: var(--accent);
+}
+.prose blockquote {
+  border-left: 3px solid var(--accent); padding-left: 14px;
+  color: var(--text-sub); font-style: italic; margin: 12px 0;
+}
+
+/* Code Boxes */
+.code-box {
+  background: #131210; border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden; margin: 12px 0;
+}
+.code-box-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 14px; background: rgba(0,0,0,0.3);
+  border-bottom: 1px solid var(--border);
+}
+.code-lang { font-family: var(--mono); font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
+.code-lang::before { content: "⚡"; }
+.btn-copy {
+  background: none; border: 1px solid var(--border); color: var(--text-sub);
+  font-size: 12px; padding: 3px 10px; border-radius: 5px; cursor: pointer;
+  transition: all .15s; display: flex; align-items: center; gap: 5px;
+}
+.btn-copy:hover { background: var(--bg-hover); color: var(--text); }
+.code-box pre { padding: 16px; overflow-x: auto; margin: 0; }
+.code-box code { background: none; border: none; color: #e2d9cc; font-size: 13.5px; padding: 0; }
+
+/* Thinking block */
+.think-block {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 9px; margin-bottom: 10px; overflow: hidden;
+}
+.think-block summary {
+  padding: 8px 12px; cursor: pointer; font-size: 12px; color: var(--text-sub);
+  display: flex; align-items: center; gap: 7px; user-select: none;
+  list-style: none;
+}
+.think-block summary::-webkit-details-marker { display: none; }
+.think-block summary::before { content: "▶"; font-size: 10px; transition: transform .15s; }
+.think-block[open] summary::before { transform: rotate(90deg); }
+.think-content { padding: 10px 14px; font-size: 12px; color: var(--text-dim); white-space: pre-wrap; border-top: 1px solid var(--border); line-height: 1.6; }
+
+/* Telemetry bar */
+.tele-bar {
+  display: flex; align-items: center; gap: 14px; margin-top: 10px;
+  font-size: 11px; color: var(--text-dim); flex-wrap: wrap;
+}
+.tele-spend { color: var(--green); font-weight: 600; font-family: var(--mono); }
+.tele-confirmed { color: var(--green); }
+.auto-code-pill {
+  background: var(--accent-dark); border: 1px solid var(--accent-glow);
+  color: var(--accent); font-size: 10px; padding: 1px 7px; border-radius: 100px;
+}
+
+/* Streaming caret */
+.caret { display: inline-block; width: 2px; height: 1em; background: var(--accent); border-radius: 1px; animation: blink .9s step-end infinite; vertical-align: text-bottom; margin-left: 1px; }
+@keyframes blink { 50%{opacity:0;} }
+
+/* ══ DOCK (Input Area) ══ */
+#dock { flex-shrink: 0; border-top: 1px solid var(--border); background: var(--bg-panel); padding: 14px 20px 18px; }
+.dock-inner { max-width: 760px; margin: 0 auto; }
+
+/* Attached files tray */
+#file-tray { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
+.file-chip {
+  display: flex; align-items: center; gap: 7px;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 7px; padding: 4px 10px; font-size: 12px; color: var(--text-sub);
+}
+.file-chip button { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 13px; padding: 0 2px; }
+.file-chip button:hover { color: var(--red); }
+
+/* Prompt card */
+.prompt-card {
+  background: var(--bg-input); border: 1.5px solid var(--border-mid);
+  border-radius: 14px; overflow: hidden; transition: border-color .2s;
+}
+.prompt-card:focus-within { border-color: rgba(217,119,87,.55); box-shadow: 0 0 0 3px rgba(217,119,87,.08); }
+
+.prompt-row { display: flex; align-items: flex-end; padding: 4px 6px 4px 10px; gap: 6px; }
+#prompt-input {
+  flex: 1; background: none; border: none; outline: none;
+  color: var(--text); font-family: var(--font); font-size: 15px;
+  line-height: 1.6; resize: none; padding: 10px 4px;
+  max-height: 220px; min-height: 44px; overflow-y: auto;
+}
+#prompt-input::placeholder { color: var(--text-dim); }
+#prompt-input::-webkit-scrollbar { width: 4px; }
+#prompt-input::-webkit-scrollbar-thumb { background: var(--bg-hover); border-radius: 4px; }
+
+.btn-attach {
+  background: none; border: 1px solid var(--border); color: var(--text-dim);
+  width: 34px; height: 34px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 17px; flex-shrink: 0; transition: all .15s;
+}
+.btn-attach:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border-mid); }
+
+#btn-send {
+  width: 36px; height: 36px; flex-shrink: 0;
+  background: var(--accent); border: none; border-radius: 9px;
+  color: #fff; cursor: pointer; font-size: 17px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .15s;
+}
+#btn-send:hover { background: #c96845; transform: scale(1.04); }
+#btn-send:disabled { opacity: .4; cursor: default; transform: none; }
+#btn-send.stop { background: var(--bg-surface); border: 1.5px solid var(--border-mid); color: var(--text-sub); }
+#btn-send.stop:hover { border-color: var(--red); color: var(--red); }
+
+/* Controls row */
+.prompt-controls {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 12px 10px; gap: 10px;
+}
+.mode-group { display: flex; align-items: center; gap: 8px; }
+.mode-label { font-size: 12px; color: var(--text-dim); }
+.seg { display: flex; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+.seg-btn {
+  padding: 4px 12px; font-size: 12px; font-weight: 500; color: var(--text-dim);
+  background: none; border: none; cursor: pointer; transition: all .15s;
+  display: flex; align-items: center; gap: 5px;
+}
+.seg-btn.active { background: var(--accent); color: #fff; }
+.seg-btn:not(.active):hover { background: var(--bg-hover); color: var(--text); }
+.dock-hint { font-size: 11px; color: var(--text-dim); }
+.auto-detect-badge {
+  font-size: 11px; color: var(--accent); background: var(--accent-dark);
+  border: 1px solid var(--accent-glow); border-radius: 100px; padding: 2px 8px;
+  display: none; align-items: center; gap: 4px;
+}
+.auto-detect-badge.show { display: flex; }
+
+/* ══ MODALS ══ */
+.modal-bg {
+  position: fixed; inset: 0; background: rgba(0,0,0,.65);
+  z-index: 999; display: none; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+}
+.modal-bg.open { display: flex; }
+.modal {
+  background: var(--bg-panel); border: 1px solid var(--border-mid);
+  border-radius: 16px; padding: 24px; width: 100%; max-width: 540px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.7); max-height: 85vh; overflow-y: auto;
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 20px;
+}
+.modal-title { font-size: 16px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 8px; }
+.modal-close { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 20px; padding: 2px 6px; border-radius: 6px; }
+.modal-close:hover { color: var(--text); background: var(--bg-hover); }
+
+/* Key Manager */
+.import-zone {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 11px; padding: 16px; margin-bottom: 16px;
+}
+.import-zone-title { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
+.import-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.btn-primary {
+  background: var(--accent); color: #fff; border: none;
+  padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all .15s; display: flex; align-items: center; gap: 7px;
+}
+.btn-primary:hover { background: var(--accent-btn); }
+.import-desc { font-size: 12px; color: var(--text-dim); line-height: 1.5; margin-bottom: 10px; }
+.paste-row { display: flex; gap: 8px; }
+.paste-input {
+  flex: 1; background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); padding: 8px 12px;
+  font-family: var(--mono); font-size: 12px; outline: none;
+}
+.paste-input:focus { border-color: var(--accent); }
+.btn-sec {
+  background: var(--bg-surface); border: 1px solid var(--border-mid); color: var(--text-sub);
+  padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all .15s;
+}
+.btn-sec:hover { background: var(--bg-hover); color: var(--text); }
+
+.import-status { font-size: 12px; min-height: 18px; margin-top: 8px; }
+
+.key-list-title { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+#keys-list { margin-bottom: 14px; }
+.key-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 9px;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  margin-bottom: 6px;
+}
+.key-indicator { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.key-indicator.active { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.key-indicator.ready { background: var(--text-dim); }
+.key-indicator.cooling { background: var(--amber); }
+.key-info { flex: 1; min-width: 0; }
+.key-masked { font-family: var(--mono); font-size: 13px; color: var(--text); }
+.key-status { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.key-status.active { color: var(--green); }
+.key-status.cooling { color: var(--amber); }
+.btn-del-key {
+  background: none; border: none; color: var(--text-dim); cursor: pointer;
+  padding: 5px 9px; border-radius: 6px; font-size: 16px; transition: all .15s;
+}
+.btn-del-key:hover { color: var(--red); background: rgba(224,108,108,.1); }
+
+.modal-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 4px; }
+.btn-danger { background: none; border: 1px solid rgba(224,108,108,.35); color: var(--red); padding: 7px 14px; border-radius: 8px; font-size: 12px; cursor: pointer; transition: all .15s; }
+.btn-danger:hover { background: rgba(224,108,108,.1); }
+
+/* Settings Modal */
+.settings-section { margin-bottom: 20px; }
+.settings-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+.settings-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.settings-row:last-child { border-bottom: none; }
+.settings-name { font-size: 14px; color: var(--text); }
+.settings-desc { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+/* GitHub Modal */
+#github-modal .modal { max-width: 620px; }
+.gh-repo {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px;
+  border-radius: 9px; border: 1px solid var(--border); background: var(--bg-surface);
+  margin-bottom: 6px; cursor: pointer; transition: all .15s;
+}
+.gh-repo:hover { border-color: var(--border-mid); background: var(--bg-hover); }
+.gh-repo-icon { font-size: 18px; margin-top: 1px; }
+.gh-repo-info { flex: 1; min-width: 0; }
+.gh-repo-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.gh-repo-desc { font-size: 12px; color: var(--text-dim); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-badge {
+  font-size: 10px; padding: 2px 7px; border-radius: 100px; border: 1px solid;
+  flex-shrink: 0;
+}
+.gh-badge.private { color: var(--amber); border-color: rgba(212,162,89,.35); background: rgba(212,162,89,.08); }
+.gh-badge.public { color: var(--green); border-color: rgba(111,186,138,.35); background: rgba(111,186,138,.08); }
+
+/* Drag drop overlay */
+#drag-overlay {
+  position: fixed; inset: 0; background: rgba(217,119,87,.12);
+  border: 2px dashed var(--accent); z-index: 500; border-radius: 16px;
+  display: none; align-items: center; justify-content: center;
+  pointer-events: none; font-size: 22px; color: var(--accent);
+}
+#drag-overlay.show { display: flex; }
+
+/* Billing bar in modal */
+.billing-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.billing-row:last-child { border-bottom: none; }
+.billing-key { color: var(--text-sub); }
+.billing-val { color: var(--text); font-family: var(--mono); font-weight: 500; }
+.billing-val.green { color: var(--green); }
+
+/* Responsive collapse */
+@media (max-width: 680px) {
+  #sidebar { position: fixed; left: 0; top: 0; bottom: 0; }
+  .user-bubble { max-width: 90%; }
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ══ SIDEBAR ══ -->
+  <aside id="sidebar">
+    <div class="side-top">
+      <div class="brand">
+        <div class="brand-icon">⚡</div>
+        <span>Groq Studio</span>
+      </div>
+      <button class="btn-ghost" id="btn-collapse-sidebar" title="Collapse sidebar">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M15 19l-7-7 7-7"/></svg>
+      </button>
+    </div>
+
+    <button class="btn-new" id="btn-new-chat">
+      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+      New conversation
+    </button>
+
+    <div class="side-sessions" id="sessions-list"></div>
+
+    <div class="side-footer">
+      <div class="spend-pill">
+        <div class="spend-label">Session Spend</div>
+        <div class="spend-value" id="side-spend">$0.000000</div>
+        <div class="spend-sub" id="side-tokens">0 tokens processed</div>
+      </div>
+      <div class="side-actions">
+        <button class="btn-sm" id="btn-load-key-file">🔑 Load Key</button>
+        <button class="btn-sm" id="btn-open-key-manager">📥 Key Manager</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ══ MAIN AREA ══ -->
+  <main id="main">
+
+    <!-- Top Nav -->
+    <div id="topbar">
+      <div class="topbar-left">
+        <button class="btn-ghost" id="btn-expand-sidebar" title="Expand sidebar" style="display:none">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg>
+        </button>
+        <select class="model-select" id="model-select">
+          <option value="__DEFAULT_MODEL__">__DEFAULT_MODEL__</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:4px;">
+        <button class="btn-icon" id="btn-zoom-out" title="Zoom out (−)">−</button>
+        <span id="zoom-level" style="font-size:12px;color:var(--text-dim);min-width:36px;text-align:center;font-family:var(--mono);">100%</span>
+        <button class="btn-icon" id="btn-zoom-in" title="Zoom in (+)">+</button>
+      </div>
+      <div class="topbar-right">
+        <button class="btn-icon" id="btn-github" title="🐙 GitHub Reader">🐙</button>
+        <button class="btn-icon" id="btn-persona" title="System Prompt / Persona">🎭</button>
+        <button class="btn-icon accent" id="btn-billing" title="💰 Billing & Spend">💰</button>
+        <button class="btn-icon" id="btn-settings" title="⚙️ Settings">⚙️</button>
+      </div>
+    </div>
+
+    <!-- Live Status Bar -->
+    <div id="status-bar">
+      <div class="stat"><div class="live-dot"></div><span>Live</span></div>
+      <div class="stat">Spend: <span class="stat-val stat-spend" id="sb-spend">$0.000000</span></div>
+      <div class="stat">Tokens: <span class="stat-val" id="sb-tokens">0</span></div>
+      <div class="stat">Prompts: <span class="stat-val" id="sb-prompts">0</span></div>
+      <div class="stat">Keys: <span class="stat-val" id="sb-keys">0</span></div>
+      <div class="stat">v__VERSION__</div>
+    </div>
+
+    <!-- Chat Scroll Area -->
+    <div id="scroll-view">
+      <div id="chat-container">
+        <!-- messages rendered here -->
+      </div>
+    </div>
+
+    <!-- ══ DOCK ══ -->
+    <div id="dock">
+      <div class="dock-inner">
+        <div id="file-tray"></div>
+        <div class="prompt-card">
+          <div class="prompt-row">
+            <input type="file" id="file-input" multiple style="display:none">
+            <button class="btn-attach" id="btn-attach" title="Attach file">📎</button>
+            <textarea id="prompt-input" rows="1" placeholder="Message Groq Studio…"></textarea>
+            <button id="btn-send" title="Send (Enter)">
+              <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+            </button>
+          </div>
+          <div class="prompt-controls">
+            <div class="mode-group">
+              <span class="mode-label">Output:</span>
+              <div class="seg">
+                <button class="seg-btn active" id="seg-normal" data-mode="normal">💬 Prose</button>
+                <button class="seg-btn" id="seg-code" data-mode="code">💻 Code Box</button>
+              </div>
+              <span class="auto-detect-badge" id="auto-detect-badge">⚡ Auto-detected</span>
+            </div>
+            <span class="dock-hint">Enter sends · Shift+Enter newline</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ══ DRAG OVERLAY ══ -->
+<div id="drag-overlay">📎 Drop files here</div>
+
+<!-- ══ KEY MANAGER MODAL ══ -->
+<div class="modal-bg" id="modal-keys">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">🔑 Key Manager</div>
+      <button class="modal-close" onclick="closeModal('modal-keys')">✕</button>
+    </div>
+
+    <div class="import-zone">
+      <div class="import-zone-title">📥 Import API Keys</div>
+      <div class="import-desc">Pick any file — <code>.txt</code>, <code>.env</code>, <code>.json</code>, bash exports, noisy logs. The parser automatically extracts all valid <code>gsk_…</code> keys and ignores the rest.</div>
+      <div class="import-row">
+        <input type="file" id="key-file-input" accept=".txt,.env,.json,.sh,.yaml,.yml,.md" style="display:none">
+        <button class="btn-primary" id="btn-pick-key-file">📁 Pick Key File</button>
+        <span style="color:var(--text-dim);font-size:12px;">or paste below</span>
+      </div>
+      <div class="paste-row">
+        <input id="key-paste-input" class="paste-input" type="password" placeholder="Paste gsk_… key or any file content here">
+        <button class="btn-sec" id="btn-add-pasted-key">Add</button>
+      </div>
+      <div class="import-status" id="key-import-status"></div>
+    </div>
+
+    <div class="key-list-title">Active Key Pool</div>
+    <div id="keys-list">
+      <div style="color:var(--text-dim);font-size:13px;padding:8px 0;">Loading…</div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn-danger" id="btn-clear-all-keys">🗑 Clear All Keys</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-sec" id="btn-reset-cooldowns">🔄 Reset Cooldowns</button>
+        <button class="btn-sec" onclick="closeModal('modal-keys')">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PERSONA / SYSTEM PROMPT MODAL ══ -->
+<div class="modal-bg" id="modal-persona">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">🎭 Assistant Persona</div>
+      <button class="modal-close" onclick="closeModal('modal-persona')">✕</button>
+    </div>
+    <div class="settings-section">
+      <div class="settings-label">Presets</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+        <button class="chip" onclick="setPersona('default')">Default</button>
+        <button class="chip" onclick="setPersona('coder')">Senior Engineer</button>
+        <button class="chip" onclick="setPersona('concise')">Concise</button>
+        <button class="chip" onclick="setPersona('none')">None</button>
+      </div>
+    </div>
+    <div class="settings-label">Custom System Prompt</div>
+    <textarea id="system-prompt-input" rows="5" style="width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:12px;font-family:var(--font);font-size:14px;outline:none;resize:vertical;margin-bottom:14px;" placeholder="Enter a system prompt…"></textarea>
+    <div style="display:flex;justify-content:flex-end;gap:8px;">
+      <button class="btn-sec" onclick="closeModal('modal-persona')">Cancel</button>
+      <button class="btn-primary" id="btn-save-persona">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ GITHUB MODAL ══ -->
+<div class="modal-bg" id="modal-github">
+  <div class="modal" style="max-width:620px;">
+    <div class="modal-header">
+      <div class="modal-title">🐙 GitHub Reader <span style="font-size:12px;color:var(--text-dim);font-weight:400;">(read-only)</span></div>
+      <button class="modal-close" onclick="closeModal('modal-github')">✕</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <input id="gh-url-input" class="paste-input" style="flex:1;" placeholder="Paste GitHub URL to read a file…">
+      <button class="btn-primary" id="btn-gh-read-url">Read</button>
+      <button class="btn-sec" id="btn-gh-reload-repos">🔄 Repos</button>
+    </div>
+    <div id="gh-status" style="font-size:12px;color:var(--text-dim);margin-bottom:10px;"></div>
+    <div id="gh-repos-list" style="max-height:380px;overflow-y:auto;"></div>
+    <div id="gh-file-view" style="display:none;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <button class="btn-sec" id="btn-gh-back" style="padding:5px 12px;font-size:12px;">← Back</button>
+        <span id="gh-file-name" style="font-size:13px;color:var(--text-sub);"></span>
+        <button class="btn-sec" id="btn-gh-use-file" style="padding:5px 12px;font-size:12px;">📎 Use in Chat</button>
+      </div>
+      <pre style="background:var(--bg-surface);border:1px solid var(--border);border-radius:9px;padding:14px;overflow:auto;max-height:300px;font-family:var(--mono);font-size:12px;color:var(--text-sub);white-space:pre-wrap;" id="gh-file-content"></pre>
+    </div>
+  </div>
+</div>
+
+<!-- ══ BILLING MODAL ══ -->
+<div class="modal-bg" id="modal-billing">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">💰 Billing & Spend</div>
+      <button class="modal-close" onclick="closeModal('modal-billing')">✕</button>
+    </div>
+    <div id="billing-content">
+      <div style="text-align:center;color:var(--text-dim);padding:20px;">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SETTINGS MODAL ══ -->
+<div class="modal-bg" id="modal-settings">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">⚙️ Settings</div>
+      <button class="modal-close" onclick="closeModal('modal-settings')">✕</button>
+    </div>
+    <div class="settings-section">
+      <div class="settings-label">API Keys</div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-name">Key Manager</div>
+          <div class="settings-desc">View, import, and remove Groq API keys</div>
+        </div>
+        <button class="btn-sec" onclick="closeModal('modal-settings'); openKeyManager();">Open</button>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-label">Version</div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-name">Groq AI Studio</div>
+          <div class="settings-desc">Version v__VERSION__ — Dynamic Port, Auto Code Box, Key Manager</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+// ═══════════════════════════════════════════════════
+//  GROQ AI STUDIO — Client JS  v__VERSION__
+// ═══════════════════════════════════════════════════
+
+var STORAGE_SESSIONS    = "groq_sessions_v3";
+var STORAGE_SESSION_ID  = "groq_session_id_v3";
+var STORAGE_OUTPUT_MODE = "groq_output_mode";
+var STORAGE_PERSONA     = "groq_persona";
+
+var sessions        = {};
+var currentSessionId = "";
+var outputMode      = localStorage.getItem(STORAGE_OUTPUT_MODE) || "normal";
+var systemPrompt    = localStorage.getItem(STORAGE_PERSONA) || "";
+var attachedFiles   = [];
+var isBusy          = false;
+var abortCtrl       = null;
+var sessionSpent    = 0;
+var sessionTokens   = 0;
+var totalPrompts    = 0;
+
+// ── Utility ────────────────────────────────────────
+function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function uid(){ return "s_"+Date.now()+"_"+Math.random().toString(36).slice(2,7); }
+
+// ── Sessions ────────────────────────────────────────
+function loadSessions(){
+  try{ sessions = JSON.parse(localStorage.getItem(STORAGE_SESSIONS)||"{}"); } catch(e){ sessions = {}; }
+  currentSessionId = localStorage.getItem(STORAGE_SESSION_ID)||"";
+  if (!sessions[currentSessionId]){ currentSessionId = uid(); sessions[currentSessionId]={id:currentSessionId,title:"New Chat",messages:[]}; }
+}
+function saveSessions(){
+  var ids = Object.keys(sessions);
+  if (ids.length > 60){
+    ids.sort(function(a,b){ return (sessions[a].ts||0)-(sessions[b].ts||0); });
+    ids.slice(0, ids.length-60).forEach(function(k){ delete sessions[k]; });
+  }
+  try{ localStorage.setItem(STORAGE_SESSIONS, JSON.stringify(sessions)); } catch(e){}
+  localStorage.setItem(STORAGE_SESSION_ID, currentSessionId);
+}
+function currentSession(){ return sessions[currentSessionId]; }
+
+function renderSidebar(){
+  var list = document.getElementById("sessions-list");
+  list.innerHTML = "";
+  var ids = Object.keys(sessions).sort(function(a,b){ return (sessions[b].ts||0)-(sessions[a].ts||0); });
+  ids.forEach(function(id){
+    var s = sessions[id];
+    var div = document.createElement("div");
+    div.className = "session-item" + (id===currentSessionId?" active":"");
+    var name = document.createElement("span");
+    name.className = "session-name";
+    name.textContent = s.title || "Untitled";
+    var del = document.createElement("button");
+    del.className = "session-del";
+    del.innerHTML = "✕";
+    del.title = "Delete";
+    del.onclick = function(e){
+      e.stopPropagation();
+      if (!confirm("Delete this conversation?")) return;
+      delete sessions[id];
+      if (currentSessionId===id){
+        var rem = Object.keys(sessions);
+        currentSessionId = rem.length ? rem[0] : uid();
+        if (!sessions[currentSessionId]) sessions[currentSessionId]={id:currentSessionId,title:"New Chat",messages:[]};
+      }
+      saveSessions(); renderMessages(); renderSidebar();
+    };
+    div.appendChild(name); div.appendChild(del);
+    div.onclick = function(){ currentSessionId=id; saveSessions(); renderMessages(); renderSidebar(); };
+    list.appendChild(div);
+  });
+}
+
+// ── Mode Switch ─────────────────────────────────────
+var segNormal = document.getElementById("seg-normal");
+var segCode   = document.getElementById("seg-code");
+var autoDetectBadge = document.getElementById("auto-detect-badge");
+
+function setOutputMode(mode, autoDetected){
+  outputMode = mode;
+  localStorage.setItem(STORAGE_OUTPUT_MODE, mode);
+  segNormal.classList.toggle("active", mode==="normal");
+  segCode.classList.toggle("active",   mode==="code");
+  autoDetectBadge.classList.toggle("show", !!autoDetected);
+  if (!autoDetected) autoDetectBadge.classList.remove("show");
+}
+segNormal.onclick = function(){ setOutputMode("normal"); };
+segCode.onclick   = function(){ setOutputMode("code"); };
+setOutputMode(outputMode);
+
+// Auto Code Box detection
+function detectCodeBoxIntent(text){
+  if (!text) return false;
+  var l = text.toLowerCase();
+  return /\b(in\s+(the\s+|a\s+)?code\s*box)\b/.test(l) ||
+         /\b(write\s+(answer|it|response)?\s*in\s+(the\s+|a\s+)?code\s*box)\b/.test(l) ||
+         /\b(put\s+(it|answer)?\s*in\s+(the\s+|a\s+)?code\s*box)\b/.test(l) ||
+         /\b(code\s*box\s*(format|mode))\b/.test(l) ||
+         /\b(only\s+code|code\s+only|just\s+the\s+code)\b/.test(l) ||
+         /\b(as\s+a\s+code\s*(block|box))\b/.test(l) ||
+         /\b(provide\s+only\s+(the\s+)?code)\b/.test(l) ||
+         /\b(pure\s+code\s+without\s+explanation)\b/.test(l) ||
+         /\b(no\s+explanations?,\s*just\s+code)\b/.test(l);
+}
+
+// ── Markdown Renderer ───────────────────────────────
+function renderMarkdown(src, forceCode){
+  if (!src) return "";
+  if (forceCode){
+    var stripped = src.replace(/^```[\w+-]*\n?/,"").replace(/```\s*$/,"").trimEnd();
+    return renderCodeBox(stripped, "code");
+  }
+  var blocks = [];
+  var t = src.replace(/```([\w+-]*)[^\n]*\n([\s\S]*?)(```|$)/g, function(m, lang, code){
+    blocks.push({lang:lang||"code", code:code.replace(/\n$/,"")});
+    return "\x00"+(blocks.length-1)+"\x00";
+  });
+  t = esc(t);
+  t = t.replace(/`([^`\n]+)`/g,"<code>$1</code>");
+  t = t.replace(/\*\*([^*\n]+)\*\*/g,"<strong>$1</strong>");
+  t = t.replace(/\*([^*\n]+)\*/g,"<em>$1</em>");
+  t = t.replace(/^###### (.*)/gm,"<h6>$1</h6>");
+  t = t.replace(/^##### (.*)/gm,"<h5>$1</h5>");
+  t = t.replace(/^#### (.*)/gm,"<h4>$1</h4>");
+  t = t.replace(/^### (.*)/gm,"<h3>$1</h3>");
+  t = t.replace(/^## (.*)/gm,"<h2>$1</h2>");
+  t = t.replace(/^# (.*)/gm,"<h2>$1</h2>");
+  t = t.replace(/^\s*[-*]\s+(.*)/gm,"<li>$1</li>").replace(/(<li>.*<\/li>)+/gs,"<ul>$&</ul>");
+  t = t.replace(/^\s*\d+\.\s+(.*)/gm,"<li>$1</li>").replace(/(<li>.*<\/li>)+/gs,function(m){ return m.includes("<ul>") ? m : "<ol>"+m+"</ol>"; });
+  t = t.replace(/^\&gt;\s*(.*)/gm,"<blockquote>$1</blockquote>");
+  t = t.split("\n\n").map(function(p){
+    p = p.trim();
+    if (!p) return "";
+    if (/^<(h[2-6]|ul|ol|li|blockquote|\x00)/.test(p)) return p;
+    return "<p>"+p.replace(/\n/g,"<br>")+"</p>";
+  }).join("");
+  return t.replace(/\x00(\d+)\x00/g,function(m,i){
+    var b=blocks[+i]; return renderCodeBox(b.code, b.lang);
+  });
+}
+
+function renderCodeBox(code, lang){
+  return '<div class="code-box">'+
+    '<div class="code-box-header">'+
+      '<span class="code-lang">'+esc(lang||"code")+'</span>'+
+      '<button class="btn-copy" onclick="copyCode(this)">📋 Copy</button>'+
+    '</div>'+
+    '<pre><code>'+esc(code)+'</code></pre>'+
+  '</div>';
+}
+
+window.copyCode = function(btn){
+  var code = btn.closest(".code-box").querySelector("code");
+  navigator.clipboard.writeText(code.innerText).then(function(){
+    var orig = btn.innerHTML;
+    btn.innerHTML = "✓ Copied"; btn.style.color = "var(--green)";
+    setTimeout(function(){ btn.innerHTML = orig; btn.style.color = ""; }, 1600);
+  });
+};
+
+// Thinking parser
+function splitThink(raw){
+  var open = raw.indexOf("<think>");
+  if (open===-1) return {think:"",answer:raw,thinking:false};
+  var before = raw.slice(0,open);
+  var close = raw.indexOf("</think>",open);
+  if (close===-1) return {think:raw.slice(open+7),answer:before,thinking:true};
+  return {think:raw.slice(open+7,close),answer:before+raw.slice(close+8),thinking:false};
+}
+
+// ── Message DOM ─────────────────────────────────────
+function addUserMsg(content, mode){
+  var row = document.createElement("div");
+  row.className = "msg-row user";
+  row.innerHTML = '<div class="user-bubble">'+esc(content)+'</div>'+
+    '<div class="user-meta">'+
+      '<span class="mode-badge'+(mode==="code"?" code":"")+'">'+
+        (mode==="code"?"💻 Code Box Mode":"💬 Prose Mode")+'</span>'+
+    '</div>';
+  document.getElementById("chat-container").appendChild(row);
+}
+
+function addAssistantMsg(content, reasoning, streaming, telemetry, mode){
+  var row = document.createElement("div");
+  row.className = "msg-row assistant";
+  var arow = document.createElement("div");
+  arow.className = "asst-row";
+
+  var avatar = document.createElement("div");
+  avatar.className = "asst-avatar";
+  avatar.textContent = "⚡";
+  arow.appendChild(avatar);
+
+  var body = document.createElement("div");
+  body.className = "asst-body";
+
+  var name = document.createElement("div");
+  name.className = "asst-name";
+  name.textContent = "Groq Assistant";
+  body.appendChild(name);
+
+  var parsed = splitThink(content||"");
+  var thinkText = ((reasoning||"") + parsed.think).trim();
+
+  if (thinkText){
+    var details = document.createElement("details");
+    details.className = "think-block";
+    if (streaming && !parsed.answer) details.open = true;
+    var sumEl = document.createElement("summary");
+    sumEl.textContent = (streaming && !parsed.answer) ? "Thinking…" : "View reasoning";
+    var thinkBody = document.createElement("div");
+    thinkBody.className = "think-content";
+    thinkBody.textContent = thinkText;
+    details.appendChild(sumEl); details.appendChild(thinkBody);
+    body.appendChild(details);
+  }
+
+  var prose = document.createElement("div");
+  prose.className = "prose";
+  prose.innerHTML = renderMarkdown(parsed.answer, mode==="code") + (streaming ? '<span class="caret"></span>' : "");
+  body.appendChild(prose);
+
+  if (telemetry){
+    var tbar = document.createElement("div");
+    tbar.className = "tele-bar";
+    var spendStr = "$"+Number(telemetry.cost||0).toFixed(6);
+    tbar.innerHTML =
+      '<span class="tele-spend">💰 '+spendStr+'</span>'+
+      '<span>🔢 '+(telemetry.total_tokens||0)+' tok ('+(telemetry.prompt_tokens||0)+' in / '+(telemetry.completion_tokens||0)+' out)</span>'+
+      '<span>⚡ '+(telemetry.speed||0)+' tok/s ('+(telemetry.elapsed||0)+'s)</span>'+
+      (telemetry.auto_detected_code?'<span class="auto-code-pill">⚡ Code Box auto-detected</span>':'')+
+      '<span class="tele-confirmed">✓ Confirmed</span>';
+    body.appendChild(tbar);
+  }
+
+  arow.appendChild(body);
+  row.appendChild(arow);
+  document.getElementById("chat-container").appendChild(row);
+  return {row, body, prose};
+}
+
+function updateLiveResponse(ref, content, reasoning, streaming, mode){
+  if (!ref) return;
+  var body = ref.body;
+  var prose = ref.prose;
+  var parsed = splitThink(content||"");
+  var thinkText = ((reasoning||"") + parsed.think).trim();
+
+  var details = body.querySelector(".think-block");
+  if (thinkText){
+    if (!details){
+      details = document.createElement("details");
+      details.className = "think-block";
+      if (!parsed.answer) details.open = true;
+      var sumEl = document.createElement("summary");
+      sumEl.textContent = !parsed.answer ? "Thinking…" : "View reasoning";
+      var thinkBody = document.createElement("div");
+      thinkBody.className = "think-content";
+      details.appendChild(sumEl); details.appendChild(thinkBody);
+      body.insertBefore(details, prose);
+    }
+    details.querySelector(".think-content").textContent = thinkText;
+    details.querySelector("summary").textContent = (!parsed.answer && streaming) ? "Thinking…" : "View reasoning";
+  }
+  prose.innerHTML = renderMarkdown(parsed.answer, mode==="code") + (streaming ? '<span class="caret"></span>' : "");
+}
+
+// ── Render Messages ─────────────────────────────────
+function renderMessages(){
+  var sess = currentSession();
+  var msgs = (sess&&sess.messages) || [];
+  var container = document.getElementById("chat-container");
+  container.innerHTML = "";
+
+  if (!msgs.length){
+    container.innerHTML =
+      '<div class="hero">'+
+        '<div class="hero-icon">⚡</div>'+
+        '<h1>Groq AI Studio</h1>'+
+        '<p>High-speed AI on Groq LPUs. Import a key, choose a model, and start chatting.</p>'+
+        '<div class="quick-chips">'+
+          '<div class="chip" onclick="quickPrompt(\'What is Groq LPU and why is it faster than GPU inference?\')">⚡ Groq LPU explained</div>'+
+          '<div class="chip" onclick="quickPrompt(\'Write a Python async REST API with FastAPI, in the code box\')">🐍 Python FastAPI (code box)</div>'+
+          '<div class="chip" onclick="quickPrompt(\'List my GitHub repos and tell me which looks most interesting\')">🐙 Analyze my GitHub repos</div>'+
+          '<div class="chip" onclick="quickPrompt(\'Explain the difference between qwen3-27b and gpt-4 in depth\')">🧠 Compare AI models</div>'+
+        '</div>'+
+      '</div>';
+    return;
+  }
+
+  msgs.forEach(function(m){
+    if (m.role==="user") addUserMsg(m.content, m.mode||"normal");
+    else addAssistantMsg(m.content, m.reasoning||"", false, m.telemetry||null, m.mode||"normal");
+  });
+  stickBottom();
+}
+
+// ── Scroll ──────────────────────────────────────────
+var scrollView = document.getElementById("scroll-view");
+function stickBottom(){ scrollView.scrollTop = scrollView.scrollHeight; }
+function nearBottom(){ return scrollView.scrollHeight - scrollView.scrollTop - scrollView.clientHeight < 160; }
+
+// ── File Attach ─────────────────────────────────────
+var tray = document.getElementById("file-tray");
+document.getElementById("btn-attach").onclick = function(){ document.getElementById("file-input").click(); };
+document.getElementById("file-input").onchange = function(e){
+  Array.from(e.target.files).forEach(readAttachment);
+  e.target.value = "";
+};
+function readAttachment(file){
+  var reader = new FileReader();
+  reader.onload = function(e){
+    attachedFiles.push({name:file.name, size:(file.size/1024).toFixed(1)+" KB", content:e.target.result});
+    renderTray();
+  };
+  reader.readAsText(file);
+}
+function renderTray(){
+  tray.innerHTML = "";
+  attachedFiles.forEach(function(f,i){
+    var chip = document.createElement("div");
+    chip.className = "file-chip";
+    chip.innerHTML = "<span>📄</span><span>"+esc(f.name)+" ("+f.size+")</span>"+
+      '<button onclick="removeFile('+i+')">✕</button>';
+    tray.appendChild(chip);
+  });
+}
+window.removeFile = function(i){ attachedFiles.splice(i,1); renderTray(); };
+window.addEventListener("dragover",function(e){ e.preventDefault(); document.getElementById("drag-overlay").classList.add("show"); });
+document.getElementById("drag-overlay").addEventListener("dragleave",function(){ document.getElementById("drag-overlay").classList.remove("show"); });
+window.addEventListener("drop",function(e){
+  e.preventDefault();
+  document.getElementById("drag-overlay").classList.remove("show");
+  if (e.dataTransfer&&e.dataTransfer.files) Array.from(e.dataTransfer.files).forEach(readAttachment);
+});
+
+// ── Textarea Autosize ────────────────────────────────
+var promptInput = document.getElementById("prompt-input");
+function autosize(){ promptInput.style.height="auto"; promptInput.style.height=Math.min(promptInput.scrollHeight,220)+"px"; }
+promptInput.addEventListener("input", autosize);
+promptInput.addEventListener("keydown",function(e){
+  if (e.key==="Enter" && !e.shiftKey){ e.preventDefault(); sendMessage(); }
+});
+
+// ── Send Message ─────────────────────────────────────
+var btnSend = document.getElementById("btn-send");
+btnSend.onclick = sendMessage;
+
+async function sendMessage(){
+  var text = promptInput.value.trim();
+  if ((!text && !attachedFiles.length) || isBusy) return;
+
+  var fullPrompt = text;
+  if (attachedFiles.length){
+    var payload = attachedFiles.map(function(f){ return "--- FILE: "+f.name+" ("+f.size+") ---\n"+f.content+"\n--- END ---"; }).join("\n\n");
+    fullPrompt = (payload + "\n\n" + (text||"Please analyze the attached files.")).trim();
+    attachedFiles = []; renderTray();
+  }
+
+  // Auto-detect code box from prompt
+  var autoDetected = detectCodeBoxIntent(fullPrompt);
+  if (autoDetected && outputMode !== "code") setOutputMode("code", true);
+  else if (!autoDetected) autoDetectBadge.classList.remove("show");
+
+  var sess = currentSession();
+  if (!sess.messages.length){ sess.title = text.slice(0,34)||"Chat"; sess.ts = Date.now(); }
+
+  promptInput.value = ""; autosize();
+  sess.messages.push({role:"user", content:fullPrompt, mode:outputMode});
+  saveSessions(); renderSidebar(); addUserMsg(fullPrompt, outputMode);
+
+  var liveRef = addAssistantMsg("", "", true, null, outputMode);
+  stickBottom();
+
+  isBusy = true;
+  btnSend.disabled = true;
+  btnSend.classList.add("stop");
+  btnSend.innerHTML = '<svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>';
+  abortCtrl = new AbortController();
+
+  var rawText = "", rawReason = "", finalTelemetry = null;
+  var selectedModel = document.getElementById("model-select").value || "__DEFAULT_MODEL__";
+
+  try {
+    var res = await fetch("/api/chat", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({messages:sess.messages, model:selectedModel, output_mode:outputMode, system_prompt:systemPrompt}),
+      signal:abortCtrl.signal
+    });
+    if (!res.ok || !res.body) throw new Error("Server error "+res.status);
+
+    var reader = res.body.getReader();
+    var dec = new TextDecoder();
+    var buf = "";
+
+    for(;;){
+      var chunk = await reader.read();
+      if (chunk.done) break;
+      buf += dec.decode(chunk.value, {stream:true});
+      var lines = buf.split("\n"); buf = lines.pop();
+      for (var i=0;i<lines.length;i++){
+        var ln = lines[i].trim(); if (!ln) continue;
+        var evt; try{ evt=JSON.parse(ln); } catch(e){ continue; }
+        if (evt.t){ rawText+=evt.t; updateLiveResponse(liveRef,rawText,rawReason,true,outputMode); if(nearBottom())stickBottom(); }
+        if (evt.r){ rawReason+=evt.r; updateLiveResponse(liveRef,rawText,rawReason,true,outputMode); }
+        if (evt.u){
+          finalTelemetry=evt.u;
+          sessionSpent += Number(evt.u.cost||0);
+          sessionTokens += Number(evt.u.total_tokens||0);
+          totalPrompts++;
+          updateStatusBar();
+          if (evt.u.auto_detected_code) setOutputMode("code",true);
+        }
+        if (evt.error){ updateLiveResponse(liveRef,"⚠ "+evt.error,"",false,outputMode); }
+      }
+    }
+  } catch(e){
+    if (e.name!=="AbortError") updateLiveResponse(liveRef,"⚠ Connection error: "+e.message,"",false,outputMode);
+  }
+
+  updateLiveResponse(liveRef, rawText, rawReason, false, outputMode);
+
+  sess.messages.push({role:"assistant", content:rawText, reasoning:rawReason, telemetry:finalTelemetry, mode:outputMode});
+  saveSessions();
+
+  isBusy = false;
+  btnSend.disabled = false;
+  btnSend.classList.remove("stop");
+  btnSend.innerHTML = '<svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>';
+  stickBottom();
+}
+
+window.quickPrompt = function(txt){ promptInput.value=txt; promptInput.focus(); autosize(); };
+
+// ── Status Bar ───────────────────────────────────────
+function updateStatusBar(){
+  document.getElementById("sb-spend").textContent = "$"+sessionSpent.toFixed(6);
+  document.getElementById("sb-tokens").textContent = sessionTokens.toLocaleString();
+  document.getElementById("sb-prompts").textContent = totalPrompts;
+  document.getElementById("side-spend").textContent = "$"+sessionSpent.toFixed(6);
+  document.getElementById("side-tokens").textContent = sessionTokens.toLocaleString()+" tokens processed";
+}
+
+async function refreshStatusKeys(){
+  try{
+    var r = await fetch("/api/keys");
+    var d = await r.json();
+    document.getElementById("sb-keys").textContent = d.count || 0;
+  } catch(e){}
+}
+
+// ── Sidebar Collapse ─────────────────────────────────
+document.getElementById("btn-collapse-sidebar").onclick = function(){
+  document.getElementById("sidebar").classList.add("collapsed");
+  document.getElementById("btn-expand-sidebar").style.display = "flex";
+};
+document.getElementById("btn-expand-sidebar").onclick = function(){
+  document.getElementById("sidebar").classList.remove("collapsed");
+  document.getElementById("btn-expand-sidebar").style.display = "none";
+};
+
+// ── New Chat ─────────────────────────────────────────
+document.getElementById("btn-new-chat").onclick = function(){
+  var id = uid();
+  sessions[id] = {id:id, title:"New Chat", messages:[], ts:Date.now()};
+  currentSessionId = id;
+  saveSessions(); renderMessages(); renderSidebar();
+};
+
+// ── Modal Helpers ────────────────────────────────────
+window.closeModal = function(id){ document.getElementById(id).classList.remove("open"); };
+function openModal(id){ document.getElementById(id).classList.add("open"); }
+// Close on backdrop click
+document.querySelectorAll(".modal-bg").forEach(function(bg){
+  bg.addEventListener("click", function(e){ if(e.target===bg) bg.classList.remove("open"); });
+});
+
+// ═══════════════════════════════════════════════════
+//  KEY MANAGER
+// ═══════════════════════════════════════════════════
+var keyFileInput = document.getElementById("key-file-input");
+var keyPasteInput = document.getElementById("key-paste-input");
+var keyImportStatus = document.getElementById("key-import-status");
+
+function showKeyStatus(msg, ok){
+  keyImportStatus.style.color = ok===false ? "var(--red)" : (ok==="warn" ? "var(--amber)" : "var(--green)");
+  keyImportStatus.textContent = msg;
+  if (ok !== false && ok !== "warn") setTimeout(function(){ keyImportStatus.textContent = ""; }, 4000);
+}
+
+async function importKeyContent(content, filename){
+  if (!content.trim()){ showKeyStatus("⚠ Nothing to import.", "warn"); return; }
+  showKeyStatus("⏳ Parsing and importing…", "warn");
+  try{
+    var res = await fetch("/api/keys/import", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({content:content, filename:filename||"pasted"})
+    });
+    var data = await res.json();
+    if (data.ok){ showKeyStatus("✓ "+data.message); await refreshKeysList(); refreshStatusKeys(); }
+    else showKeyStatus("✗ "+(data.error||"Import failed"), false);
+  } catch(e){ showKeyStatus("✗ "+e.message, false); }
+}
+
+document.getElementById("btn-pick-key-file").onclick = function(){ keyFileInput.click(); };
+document.getElementById("btn-load-key-file").onclick = function(){ keyFileInput.click(); };
+document.getElementById("btn-open-key-manager").onclick = openKeyManager;
+
+keyFileInput.onchange = function(){
+  if (!keyFileInput.files||!keyFileInput.files.length) return;
+  var f = keyFileInput.files[0]; keyFileInput.value = "";
+  var reader = new FileReader();
+  reader.onload = function(e){ importKeyContent(e.target.result, f.name); };
+  reader.readAsText(f);
+};
+
+document.getElementById("btn-add-pasted-key").onclick = function(){
+  var txt = keyPasteInput.value.trim();
+  if (!txt){ showKeyStatus("⚠ Nothing to import.", "warn"); return; }
+  importKeyContent(txt, "pasted");
+  keyPasteInput.value = "";
+};
+
+document.getElementById("btn-clear-all-keys").onclick = async function(){
+  if (!confirm("Remove ALL keys from Key Manager?")) return;
+  await fetch("/api/keys/clear", {method:"POST"});
+  showKeyStatus("All keys cleared.", "warn");
+  await refreshKeysList(); refreshStatusKeys();
+};
+
+document.getElementById("btn-reset-cooldowns").onclick = async function(){
+  var res = await fetch("/api/reset-keys", {method:"POST"});
+  var data = await res.json();
+  showKeyStatus("✓ "+(data.message||"Cooldowns reset."));
+  await refreshKeysList();
+};
+
+async function refreshKeysList(){
+  var list = document.getElementById("keys-list");
+  try{
+    var res = await fetch("/api/keys");
+    var data = await res.json();
+    list.innerHTML = "";
+    var items = data.items || [];
+    if (!items.length){
+      list.innerHTML = '<div style="color:var(--text-dim);font-size:13px;padding:10px 0;text-align:center;">No keys in pool.<br>Import a key file to get started.</div>';
+      return;
+    }
+    items.forEach(function(k){
+      var row = document.createElement("div");
+      row.className = "key-row";
+      var ind = document.createElement("div");
+      ind.className = "key-indicator "+k.state_type;
+      var info = document.createElement("div");
+      info.className = "key-info";
+      info.innerHTML = '<div class="key-masked">'+esc(k.masked)+'</div>'+
+        '<div class="key-status '+k.state_type+'">'+esc(k.status)+'</div>';
+      var del = document.createElement("button");
+      del.className = "btn-del-key";
+      del.innerHTML = "✕";
+      del.title = "Remove this key";
+      del.onclick = function(){ deleteKey(k.id); };
+      row.appendChild(ind); row.appendChild(info); row.appendChild(del);
+      list.appendChild(row);
+    });
+  } catch(e){
+    list.innerHTML = '<div style="color:var(--red);font-size:12px;">Error: '+e.message+'</div>';
+  }
+}
+
+window.deleteKey = async function(keyId){
+  if (!confirm("Remove this key from the pool?")) return;
+  var res = await fetch("/api/keys/delete", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({id:keyId})});
+  var data = await res.json();
+  if (data.ok){ await refreshKeysList(); refreshStatusKeys(); }
+  else alert("Could not remove: "+(data.error||"unknown"));
+};
+
+function openKeyManager(){
+  openModal("modal-keys"); refreshKeysList();
+}
+
+// ═══════════════════════════════════════════════════
+//  PERSONA
+// ═══════════════════════════════════════════════════
+document.getElementById("btn-persona").onclick = function(){
+  document.getElementById("system-prompt-input").value = systemPrompt;
+  openModal("modal-persona");
+};
+document.getElementById("btn-save-persona").onclick = function(){
+  systemPrompt = document.getElementById("system-prompt-input").value.trim();
+  localStorage.setItem(STORAGE_PERSONA, systemPrompt);
+  closeModal("modal-persona");
+};
+window.setPersona = function(type){
+  var box = document.getElementById("system-prompt-input");
+  if (type==="default") box.value = "You are an intelligent, helpful, and highly capable AI assistant powered by Groq LPUs.";
+  else if (type==="coder") box.value = "You are a Principal Software Engineer. Provide robust, clean, idiomatic code with best practices, error handling, and performance optimization.";
+  else if (type==="concise") box.value = "Be extremely concise. Answer in 1-3 sentences max unless code is required.";
+  else box.value = "";
+};
+
+// ═══════════════════════════════════════════════════
+//  GITHUB READER
+// ═══════════════════════════════════════════════════
+var ghCurrentFile = null;
+
+document.getElementById("btn-github").onclick = function(){
+  openModal("modal-github");
+  loadGithubRepos();
+};
+document.getElementById("btn-gh-reload-repos").onclick = loadGithubRepos;
+
+async function loadGithubRepos(){
+  document.getElementById("gh-status").textContent = "Loading repositories…";
+  document.getElementById("gh-repos-list").innerHTML = "";
+  document.getElementById("gh-file-view").style.display = "none";
+  document.getElementById("gh-repos-list").style.display = "block";
+  try{
+    var res = await fetch("/api/github/repos");
+    var data = await res.json();
+    var status = document.getElementById("gh-status");
+    if (data.error){ status.textContent = "⚠ "+data.error; return; }
+    var repos = data.repos || [];
+    status.textContent = repos.length+" repos (public + private)";
+    var list = document.getElementById("gh-repos-list");
+    list.innerHTML = "";
+    repos.forEach(function(r){
+      var div = document.createElement("div");
+      div.className = "gh-repo";
+      div.innerHTML =
+        '<div class="gh-repo-icon">'+(r.isPrivate?"🔒":"📂")+'</div>'+
+        '<div class="gh-repo-info">'+
+          '<div class="gh-repo-name">'+esc(r.nameWithOwner||r.name)+'</div>'+
+          '<div class="gh-repo-desc">'+(r.description?esc(r.description):"No description")+'</div>'+
+        '</div>'+
+        '<span class="gh-badge '+(r.isPrivate?"private":"public")+'">'+(r.isPrivate?"Private":"Public")+'</span>';
+      div.onclick = function(){ browseRepo(r.nameWithOwner, ""); };
+      list.appendChild(div);
+    });
+  } catch(e){
+    document.getElementById("gh-status").textContent = "Error: "+e.message;
+  }
+}
+
+async function browseRepo(repo, path){
+  document.getElementById("gh-status").textContent = "Loading "+repo+(path?"/"+path:"")+"…";
+  try{
+    var res = await fetch("/api/github/contents?repo="+encodeURIComponent(repo)+"&path="+encodeURIComponent(path));
+    var data = await res.json();
+    if (data.error){ document.getElementById("gh-status").textContent = "⚠ "+data.error; return; }
+    if (data.type==="file"){
+      ghCurrentFile = {name:data.name, content:data.content, repo:repo};
+      document.getElementById("gh-repos-list").style.display = "none";
+      document.getElementById("gh-file-view").style.display = "block";
+      document.getElementById("gh-file-name").textContent = repo+"/"+data.path;
+      document.getElementById("gh-file-content").textContent = data.content;
+      document.getElementById("gh-status").textContent = "";
+    } else {
+      var list = document.getElementById("gh-repos-list");
+      list.innerHTML = "";
+      (data.items||[]).forEach(function(item){
+        var div = document.createElement("div");
+        div.className = "gh-repo";
+        div.innerHTML =
+          '<div class="gh-repo-icon">'+(item.type==="dir"?"📁":"📄")+'</div>'+
+          '<div class="gh-repo-info"><div class="gh-repo-name">'+esc(item.name)+'</div>'+
+          '<div class="gh-repo-desc">'+(item.type==="dir"?"Directory":"File • "+(item.size||0)+" bytes")+'</div></div>';
+        if (item.type==="dir") div.onclick = function(){ browseRepo(repo, item.path); };
+        else div.onclick = function(){ browseRepo(repo, item.path); };
+        list.appendChild(div);
+      });
+      document.getElementById("gh-status").textContent = data.items.length+" items in "+repo+(path?"/"+path:"");
+    }
+  } catch(e){ document.getElementById("gh-status").textContent = "Error: "+e.message; }
+}
+
+document.getElementById("btn-gh-back").onclick = loadGithubRepos;
+document.getElementById("btn-gh-read-url").onclick = async function(){
+  var url = document.getElementById("gh-url-input").value.trim();
+  if (!url) return;
+  document.getElementById("gh-status").textContent = "Reading URL…";
+  try{
+    var res = await fetch("/api/github/read-url", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({url:url})});
+    var data = await res.json();
+    if (data.error){ document.getElementById("gh-status").textContent = "⚠ "+data.error; return; }
+    ghCurrentFile = {name:data.name, content:data.content};
+    document.getElementById("gh-repos-list").style.display = "none";
+    document.getElementById("gh-file-view").style.display = "block";
+    document.getElementById("gh-file-name").textContent = data.name;
+    document.getElementById("gh-file-content").textContent = data.content;
+    document.getElementById("gh-status").textContent = "";
+  } catch(e){ document.getElementById("gh-status").textContent = "Error: "+e.message; }
+};
+
+document.getElementById("btn-gh-use-file").onclick = function(){
+  if (!ghCurrentFile) return;
+  attachedFiles.push({name:ghCurrentFile.name, size:"github", content:ghCurrentFile.content});
+  renderTray(); closeModal("modal-github");
+};
+
+// ═══════════════════════════════════════════════════
+//  BILLING
+// ═══════════════════════════════════════════════════
+document.getElementById("btn-billing").onclick = async function(){
+  openModal("modal-billing");
+  document.getElementById("billing-content").innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:20px;">Loading…</div>';
+  try{
+    var res = await fetch("/api/billing");
+    var d = await res.json();
+    var html = '<div class="billing-row"><span class="billing-key">Total Spent (session)</span><span class="billing-val green">$'+Number(d.total_spent||0).toFixed(6)+'</span></div>'+
+      '<div class="billing-row"><span class="billing-key">Total Tokens</span><span class="billing-val">'+Number(d.total_tokens||0).toLocaleString()+'</span></div>'+
+      '<div class="billing-row"><span class="billing-key">Prompts Sent</span><span class="billing-val">'+Number(d.prompts_count||0)+'</span></div>';
+    if (d.api&&d.api.ok){
+      html += '<div class="billing-row"><span class="billing-key">API Region</span><span class="billing-val">'+esc(d.api.region||"N/A")+'</span></div>'+
+        '<div class="billing-row"><span class="billing-key">Rate Limit (tokens)</span><span class="billing-val">'+esc(d.api.rate_limit_limit_tokens||"N/A")+'</span></div>'+
+        '<div class="billing-row"><span class="billing-key">Remaining (tokens)</span><span class="billing-val">'+esc(d.api.rate_limit_remaining_tokens||"N/A")+'</span></div>'+
+        '<div class="billing-row"><span class="billing-key">Verified Key</span><span class="billing-val">'+esc(d.api.active_key||"")+'</span></div>'+
+        '<div class="billing-row"><span class="billing-key">Verified At</span><span class="billing-val">'+esc(d.api.verified_at||"")+'</span></div>';
+    } else {
+      html += '<div class="billing-row"><span class="billing-key">API Status</span><span class="billing-val" style="color:var(--amber);">No key — click 🔑 Load Key</span></div>';
+    }
+    if (d.recent_history&&d.recent_history.length){
+      html += '<div style="margin-top:12px;font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Recent Calls</div>';
+      d.recent_history.slice(-8).reverse().forEach(function(h){
+        html += '<div class="billing-row" style="font-size:12px;"><span class="billing-key">'+esc(h.time_str)+'<br><span style="font-size:11px;">'+esc(h.model)+'</span></span>'+
+          '<span class="billing-val">$'+Number(h.cost||0).toFixed(6)+' · '+Number(h.total_tokens||0)+' tok</span></div>';
+      });
+    }
+    document.getElementById("billing-content").innerHTML = html;
+  } catch(e){ document.getElementById("billing-content").innerHTML = '<div style="color:var(--red);">Error: '+e.message+'</div>'; }
+};
+
+// ═══════════════════════════════════════════════════
+//  SETTINGS
+// ═══════════════════════════════════════════════════
+document.getElementById("btn-settings").onclick = function(){ openModal("modal-settings"); };
+
+// ═══════════════════════════════════════════════════
+//  MODEL PICKER — populate from API
+// ═══════════════════════════════════════════════════
+async function loadModels(){
+  try{
+    var res = await fetch("/api/models");
+    var data = await res.json();
+    var sel = document.getElementById("model-select");
+    sel.innerHTML = "";
+    (data.models||["__DEFAULT_MODEL__"]).forEach(function(m){
+      var o = document.createElement("option");
+      o.value = m; o.textContent = m;
+      if (m===data.default) o.selected = true;
+      sel.appendChild(o);
+    });
+  } catch(e){}
+}
+
+// ═══════════════════════════════════════════════════
+//  ZOOM CONTROLS (+ / − resize entire UI)
+// ═══════════════════════════════════════════════════
+var currentZoom = parseInt(localStorage.getItem("groq_zoom") || "100", 10);
+function applyZoom(z) {
+  currentZoom = Math.max(60, Math.min(150, z));
+  document.documentElement.style.fontSize = (currentZoom / 100 * 15) + "px";
+  document.getElementById("zoom-level").textContent = currentZoom + "%";
+  localStorage.setItem("groq_zoom", currentZoom);
+}
+document.getElementById("btn-zoom-in").onclick = function(){ applyZoom(currentZoom + 10); };
+document.getElementById("btn-zoom-out").onclick = function(){ applyZoom(currentZoom - 10); };
+applyZoom(currentZoom);
+
+// ═══════════════════════════════════════════════════
+//  SSE LIVE SYNC — renders backdoor messages in the UI
+// ═══════════════════════════════════════════════════
+var backdoorLiveRef = null;
+var backdoorRawText = "";
+var backdoorRawReason = "";
+var backdoorMode = "normal";
+
+(function connectSSE(){
+  try{
+    var es = new EventSource("/api/events");
+    es.onmessage = function(e){
+      try{
+        var evt = JSON.parse(e.data);
+
+        // When backdoor sends a prompt — show user bubble immediately
+        if (evt.type === "invisible_hand_typing") {
+          var sess = currentSession();
+          var mode = evt.mode || "normal";
+          backdoorMode = mode;
+          backdoorRawText = "";
+          backdoorRawReason = "";
+
+          // Add to session
+          sess.messages.push({role:"user", content:evt.prompt, mode:mode});
+          sess.ts = Date.now();
+          if (sess.messages.length === 1) { sess.title = (evt.prompt||"").slice(0,34) || "Backdoor"; }
+          saveSessions();
+
+          // Render user bubble
+          addUserMsg(evt.prompt, mode);
+          stickBottom();
+
+          // Start a live assistant bubble for streaming
+          backdoorLiveRef = addAssistantMsg("", "", true, null, mode);
+          stickBottom();
+          if (evt.auto_detected_code) setOutputMode("code", true);
+        }
+
+        // Stream tokens from backdoor response
+        if (evt.type === "stream_chunk" && backdoorLiveRef) {
+          if (evt.token) {
+            backdoorRawText += evt.token;
+            updateLiveResponse(backdoorLiveRef, backdoorRawText, backdoorRawReason, true, backdoorMode);
+            if (nearBottom()) stickBottom();
+          }
+        }
+
+        // Key failover notification
+        if (evt.type === "key_failover" && backdoorLiveRef) {
+          backdoorRawText += "\n\n> ⚠️ Key failover: switched from " + evt.from_key + " → " + evt.to_key + "\n\n";
+          updateLiveResponse(backdoorLiveRef, backdoorRawText, backdoorRawReason, true, backdoorMode);
+        }
+
+        // Turn complete — finalize the assistant message
+        if (evt.type === "turn_complete") {
+          if (backdoorLiveRef) {
+            // Finalize the live response
+            var asst = evt.assistant_message || {};
+            var tele = evt.telemetry || asst.telemetry || {};
+            var finalText = asst.content || backdoorRawText;
+            var finalReason = asst.reasoning || backdoorRawReason;
+            updateLiveResponse(backdoorLiveRef, finalText, finalReason, false, asst.mode || backdoorMode);
+
+            // Add telemetry bar
+            if (tele && backdoorLiveRef.body) {
+              var existing = backdoorLiveRef.body.querySelector(".tele-bar");
+              if (!existing) {
+                var tbar = document.createElement("div");
+                tbar.className = "tele-bar";
+                var sp = "$" + Number(tele.cost||0).toFixed(6);
+                tbar.innerHTML =
+                  '<span class="tele-spend">💰 '+sp+'</span>'+
+                  '<span>🔢 '+(tele.total_tokens||0)+' tok ('+(tele.prompt_tokens||0)+' in / '+(tele.completion_tokens||0)+' out)</span>'+
+                  '<span>⚡ '+(tele.speed||0)+' tok/s ('+(tele.elapsed||0)+'s)</span>'+
+                  (tele.auto_detected_code?'<span class="auto-code-pill">⚡ Auto Code Box</span>':'')+
+                  '<span class="tele-confirmed">✓ Confirmed</span>';
+                backdoorLiveRef.body.appendChild(tbar);
+              }
+            }
+
+            // Save to session
+            var sess = currentSession();
+            sess.messages.push({role:"assistant", content:finalText, reasoning:finalReason, telemetry:tele, mode:asst.mode||backdoorMode});
+            saveSessions();
+            backdoorLiveRef = null;
+          }
+
+          sessionSpent += Number((evt.telemetry||{}).cost||0);
+          sessionTokens += Number((evt.telemetry||{}).total_tokens||0);
+          totalPrompts++;
+          updateStatusBar();
+          renderSidebar();
+          if (evt.auto_detected_code || (evt.telemetry||{}).auto_detected_code) setOutputMode("code",true);
+        }
+
+        if (evt.type==="keys_updated"||evt.type==="key_loaded"){ refreshStatusKeys(); }
+      }catch(err){}
+    };
+    es.onerror = function(){ setTimeout(connectSSE, 5000); es.close(); };
+  }catch(e){}
+})();
+
+// ═══════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════
+loadSessions();
+renderSidebar();
+renderMessages();
+loadModels();
+refreshStatusKeys();
+</script>
+</body>
+</html>
