@@ -71,7 +71,9 @@ After a failure halfway through a reply the error is shown instead, so text is n
 reply and telemetry come back in the response), `/api/github/*`.
 
 ## What has been checked, and what has not
-Checked 11.11.2026: the server is up and healthy, the keys file holds keys, the code was read through. NOT checked by this
+Checked 11.11.2026: the server is up and healthy, the keys file holds keys, the code was read through, and a three turn casual
+chat through `POST /api/remote/send` worked on the first key (about 0.5 s a reply, $0.0022 a turn; the 2,600 tokens shown per turn look
+inflated, probably the reasoning, see LESSONS). NOT checked by this
 session: a real answer from every model, failover with a truly exhausted key, the GitHub panel, drag and drop, the stress test
 `stress_test_09.py` (lives in ~/.gemini/antigravity/brain/.../scratch, not in this repo), the page on a small window.
 

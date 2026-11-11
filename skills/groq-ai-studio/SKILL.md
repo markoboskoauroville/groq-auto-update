@@ -22,4 +22,12 @@ Read `TAKEOVER.md` in the repo first: it holds everything known (files, commands
 Add a token or Origin check to the local API (TAKEOVER, Dangers); merge the two key pools; read real prices instead of the typed table.
 
 ## Run log
-- 11.11.2026: repo created from the running v09; skill written.
+- 11.11.2026: repo created from the running v09; skill written. Backdoor chat tested (3 turns, works); token count per turn looks inflated, check it.
+
+## Mistakes already made
+- Looking for `qwen` with `which` in a tool shell: it is in ~/.groq, on the PATH only through ~/.zshrc.
+- Treating a `gsk_` grep as a secret check: compare the real keys by exact match instead (script in the 11.11.2026 close).
+
+## Talking to it
+`/api/remote/send` keeps the whole conversation in the server (`active_messages`, last 80 sent), so a test chat continues across
+calls and also shows live in the open page. Send `system_prompt` each time. Each turn costs about $0.002 on qwen3.8-27b.
