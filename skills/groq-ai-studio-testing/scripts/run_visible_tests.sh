@@ -73,23 +73,71 @@ sys.exit(0 if d.get("ok") else 1)
 STATUS=$?
 
 echo ""
-printf "\033[1;36m$ curl -s -X POST %s/api/remote/send (asking Queen in live browser & terminal about her new v3 capabilities)\033[0m\n" "$BASE"
+printf "\033[1;36m$ curl -s -X POST %s/api/auto_update/keys/load-default (loading Dual-Kind APIs from ~/Downloads/API masked)\033[0m\n" "$BASE"
+AU_LOAD=$(curl -s -X POST "$BASE/api/auto_update/keys/load-default")
+echo "$AU_LOAD" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+f = d.get("found_totals", {})
+au = d.get("auto_update", {})
+provs = au.get("providers", {})
+g_mask = (provs.get("google") or {}).get("active_key") or "none"
+a_mask = (provs.get("anthropic") or {}).get("active_key") or "none"
+scanned_n = len(d.get("scanned_files", []))
+gq_n = f.get("groq", 0)
+gg_n = f.get("google", 0)
+an_n = f.get("anthropic", 0)
+print(f"  \033[1;32m✓ Dual-Kind Loader:\033[0m Scanned {scanned_n} file(s) -> Groq={gq_n} | Google={gg_n} ({g_mask}) | Anthropic={an_n} ({a_mask})")
+'
+
+echo ""
+printf "\033[1;36m$ curl -s -X POST %s/api/auto_update/run (live dry-run surgical patch + CI gate + USD cost receipt)\033[0m\n" "$BASE"
+AU_RUN=$(curl -s -X POST "$BASE/api/auto_update/run" \
+  -H 'content-type: application/json' \
+  -d '{"instruction":"Add a subtle tooltip title attribute \"Flask Server Live\" on the .live-dot element inside #status-bar in index.html.","dry_run":true,"target_files":["index.html"]}')
+echo "$AU_RUN" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+if d.get("ok"):
+    c = d.get("cost", {})
+    prov = d.get("provider")
+    mod = d.get("model")
+    el = d.get("elapsed_sec")
+    summ = d.get("summary")
+    f_usd = c.get("formatted_usd")
+    in_t = c.get("input_tokens")
+    out_t = c.get("output_tokens")
+    print(f"  \033[1;32m✓ SURGICAL DRY-RUN PASSED\033[0m [{prov}/{mod}] in {el}s")
+    print(f"  \033[1;37mSummary:\033[0m {summ}")
+    print(f"  \033[1;33m💵 UPDATE COST IN USD: {f_usd} USD\033[0m ({in_t} in / {out_t} out tokens)")
+else:
+    err = d.get("error")
+    print(f"  \033[1;33m⚠ Auto-update dry-run response:\033[0m {err}")
+'
+
+echo ""
+printf "\033[1;36m$ curl -s -X POST %s/api/remote/send (asking Queen in live browser & terminal about her v4 Dual-Kind Auto-Update & Split-Screen Studio)\033[0m\n" "$BASE"
 REMOTE_JSON=$(curl -s -X POST "$BASE/api/remote/send" \
   -H 'content-type: application/json' \
-  -d '{"prompt":"List your built-in v3 integrations (Self-Update, Star Menu, Voice Engine, Elevate Media) in 2 short sentences."}')
+  -d '{"prompt":"In 2 concise sentences, confirm your v4 Dual-Kind API Loader (Groq vs Google/Anthropic) and your Learning-by-Watching Split-Screen Surgical Auto-Update pipeline with USD cost receipts."}')
 echo "$REMOTE_JSON" | python3 -c '
 import sys, json
 d = json.load(sys.stdin)
 if d.get("ok"):
+    tele = d.get("telemetry", {})
+    cost = tele.get("cost", 0)
+    pt = tele.get("prompt_tokens", 0)
+    ct = tele.get("completion_tokens", 0)
     print("\033[1;32mQueen replied:\033[0m")
     print(d.get("reply", ""))
+    print(f"\033[90m  [Groq LPU Chat Cost: ${cost:.6f} USD | {pt} in / {ct} out]\033[0m")
 else:
     print("\033[1;31mRemote send error:\033[0m", d.get("error"))
 '
 
 echo ""
 printf "\033[1;35m─── Queen Server Console Output (/tmp/qwen_server.log) ───\033[0m\n"
-tail -n 25 /tmp/qwen_server.log || true
+tail -n 35 /tmp/qwen_server.log || true
 
 echo "$STATUS" > "$DONE_FILE"
 printf "\n\033[90m[Live test finished with exit code %s — window left open for your inspection]\033[0m\n" "$STATUS"

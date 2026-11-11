@@ -35,8 +35,10 @@ import webbrowser
 from pathlib import Path
 
 warnings.filterwarnings("ignore")
-# Import shared key pool from repo root first, else ~/.groq
+# Import shared key pool & auto_updater from repo root / qwen_app first, else ~/.groq
 sys.path.insert(0, str(Path.home() / ".groq"))
+sys.path.insert(0, str(Path.home() / ".groq" / "qwen_app"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from flask import Flask, Response, jsonify, request  # noqa: E402
@@ -48,6 +50,20 @@ from groq_pool import (  # noqa: E402
     ROTATE_ON,
     DynamicKeyPool,
     extract_keys_from_noise,
+)
+from auto_updater import (  # noqa: E402
+    add_auto_update_keys,
+    apply_surgical_edits,
+    calculate_auto_update_cost,
+    delete_auto_update_key,
+    discover_keys_from_downloads,
+    extract_multi_provider_keys,
+    fetch_provider_models,
+    get_job_status,
+    get_public_auto_update_config,
+    load_auto_update_ledger,
+    run_surgical_auto_update,
+    set_auto_update_selection,
 )
 
 HOME = Path.home() / ".groq"
@@ -246,22 +262,27 @@ def build_queen_system_prompt(user_persona: str = "") -> str:
         f"`qwen_app/index.html` (web UI).\n\n"
         f"YES — YOU CAN SELF-UPDATE! Never say you cannot self-update. You have a built-in, "
         f"CI-gated Self-Update Pipeline:\n"
-        f"1. Web UI (`🔧` Self-Update button in topbar) or HTTP API:\n"
+        f"1. Surgical Auto-Update Pipeline (Topbar Switch: `Google` Gemini vs `Anthropic` Claude + Model Switch):\n"
+        f"   - Dual-Kind API Loader: Kind 1 (`Groq` LPU Chat `gsk_…`) + Kind 2 (`Google` `AIza…` & `Anthropic` `sk-ant-…`).\n"
+        f"   - `POST http://127.0.0.1:8765/api/auto_update/run` (`{{\"instruction\": \"...\", \"provider\": \"google\"|\"anthropic\", \"model\": \"...\"}}`) "
+        f"streams pre-briefed surgical `<queen_update>` patches, opens the automatic 50/50 'Learning by Watching' Split-Screen Engineer Studio, "
+        f"validates via CI, syncs `~/.groq`, pushes to GitHub, and prints the exact USD cost receipt (`~/.groq/auto_update_ledger.json`).\n"
+        f"2. Chunked Self-Update Dispatcher (`🔧` Self-Update button in topbar) or HTTP API:\n"
         f"   - Stage code chunks: `POST http://127.0.0.1:8765/api/self_update/chunk` with "
-        f"`{{\"file\": \"app.py\" or \"index.html\", \"part\": 1, \"content\": \"...\"}}`\n"
+        f"`{{\"file\": \"app.py\" or \"index.html\" or \"auto_updater.py\", \"part\": 1, \"content\": \"...\"}}`\n"
         f"   - Assemble & deploy: `POST http://127.0.0.1:8765/api/self_update/assemble` with "
-        f"`{{\"file\": \"app.py\" or \"index.html\", \"commit_message\": \"...\"}}`\n"
-        f"2. CI Gate (`ci_run_all`): Validates Python AST syntax, HTML tag balance, truncation, "
+        f"`{{\"file\": \"app.py\" or \"index.html\" or \"auto_updater.py\", \"commit_message\": \"...\"}}`\n"
+        f"3. CI Gate (`ci_run_all`): Validates Python AST syntax, HTML tag balance, truncation, "
         f"and file size (>=30% of existing file) BEFORE touching disk (HTTP 422 on failure).\n"
-        f"3. Deploy & GitHub Sync: Backs up the old file, writes to `~/.groq/qwen_app/` and "
+        f"4. Deploy & GitHub Sync: Backs up the old file, writes to `~/.groq/qwen_app/` and "
         f"`~/Developer/groq_ai_studio/qwen_app/`, bumps `version.json` (`{VERSION}` badge), and pushes "
         f"to BOTH `markoboskoauroville/groq_ai_studio` and `{AUTO_UPDATE_REPO}`.\n"
-        f"4. GitHub Reader (`🐙` button): Reads files from `{AUTO_UPDATE_REPO}` or any repo.\n"
-        f"5. Computer Control & Production Integrations built into Queen:\n"
+        f"5. GitHub Reader (`🐙` button): Reads files from `{AUTO_UPDATE_REPO}` or any repo.\n"
+        f"6. Computer Control & Production Integrations built into Queen:\n"
         f"   - Star Menu & Startup (`⭐` button / `/api/star/startup`, `/api/star/action` for open/quit/read/press/fn on all 55 Mantra apps via STAR_API :8863).\n"
         f"   - Voice Engine & Subtitles (`🔊` button / `/api/voice/speak`, `/api/voice/speaking`, `/api/voice/pause`, `/api/voice/stop`, `/api/voice/hear` via MANTRA_VOICE :8837).\n"
         f"   - Elevate Media Production (`🎬` button / `/api/elevate/board`, `/api/elevate/whatsapp`, `/api/elevate/whatsapp/draft`, `/api/elevate/drive-comments`, `/api/elevate/fetch-image`, `/api/elevate/gemini-chrome`, `/api/elevate/gemini-status`, `/api/elevate/resolve`).\n"
-        f"6. Live Visible Self-Test Backdoor: `POST http://127.0.0.1:8765/api/test/live` (or `'t'` in terminal).\n"
+        f"7. Live Visible Self-Test Backdoor: `POST http://127.0.0.1:8765/api/test/live` (or `'t'` in terminal).\n"
     )
     if user_persona:
         return f"{base}\nAdditional Persona / Instructions:\n{user_persona}"
@@ -793,18 +814,33 @@ def chat():
 
     return Response(stream(), mimetype="application/x-ndjson", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
-# --- Key Manager & Failover Endpoints ---
+# --- Key Manager & Dual-Kind API Loader Endpoints ---
+def _current_bound_port() -> int:
+    try:
+        if PORT_FILE.exists():
+            return int(PORT_FILE.read_text(encoding="utf-8").strip())
+    except Exception:
+        pass
+    return DEFAULT_PORT
+
+
 @app.get("/api/keys")
 def get_keys():
     configured = len(pool.keys) > 0
     active_masked = pool._mask(pool.keys[0]) if configured else None
+    au_cfg = get_public_auto_update_config(
+        flask_port=_current_bound_port(),
+        app_version=VERSION,
+        groq_key_count=len(pool.keys),
+    )
     return jsonify(
         configured=configured,
         count=len(pool.keys),
         keys=pool.status_legacy(),
         items=pool.status_rich(),
         active_key=active_masked,
-        version=VERSION
+        auto_update=au_cfg,
+        version=VERSION,
     )
 
 @app.post("/api/keys/import")
@@ -825,20 +861,52 @@ def import_keys():
     if not content:
         return jsonify(ok=False, error="Key input is empty"), 400
 
-    found = extract_keys_from_noise(content)
-    if not found:
-        return jsonify(ok=False, error="No valid Groq API keys found. Keys must start with 'gsk_' followed by alphanumeric characters."), 400
+    multi = extract_multi_provider_keys(content)
+    groq_found = multi["groq"]
+    google_found = multi["google"]
+    anthropic_found = multi["anthropic"]
 
-    added, total = pool.add_keys(found)
-    broadcast_event({"type": "keys_updated", "count": total, "added": added})
+    if not groq_found and not google_found and not anthropic_found:
+        return jsonify(
+            ok=False,
+            error="No valid API keys found. Supported formats: Groq ('gsk_…'), Google Cloud/Gemini ('AIza…'), Anthropic Claude ('sk-ant-…').",
+        ), 400
+
+    groq_added = 0
+    if groq_found:
+        groq_added, _ = pool.add_keys(groq_found)
+
+    au_added = add_auto_update_keys(multi)
+    au_cfg = get_public_auto_update_config(
+        flask_port=_current_bound_port(),
+        app_version=VERSION,
+        groq_key_count=len(pool.keys),
+    )
+
+    parts = []
+    if groq_found:
+        parts.append(f"Groq Chat: +{groq_added} ({len(pool.keys)} total)")
+    if google_found:
+        parts.append(f"Google Auto-Update: +{au_added['google']}")
+    if anthropic_found:
+        parts.append(f"Anthropic Auto-Update: +{au_added['anthropic']}")
+
+    broadcast_event({
+        "type": "keys_updated",
+        "count": len(pool.keys),
+        "added": groq_added,
+        "auto_update": au_cfg,
+    })
 
     return jsonify(
         ok=True,
-        added=added,
-        count=total,
-        total=total,
+        added=groq_added,
+        auto_update_added=au_added,
+        count=len(pool.keys),
+        total=len(pool.keys),
         items=pool.status_rich(),
-        message=f"Parsed {len(found)} key(s): added {added} new key(s) to Key Manager (total {total})."
+        auto_update=au_cfg,
+        message="Imported API keys — " + " · ".join(parts),
     )
 
 @app.post("/api/keys/upload")
@@ -983,7 +1051,7 @@ def save_chat():
     }
 
     CHATS_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
+    tmp = path.with_name(f"{path.stem}.{secrets.token_hex(4)}.tmp")
     tmp.write_text(json.dumps(chat_data, ensure_ascii=False), encoding="utf-8")
     tmp.replace(path)
 
@@ -1009,7 +1077,7 @@ def rename_chat():
         chat_data = json.loads(path.read_text(encoding="utf-8"))
         chat_data["title"] = new_title
         chat_data["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-        tmp = path.with_suffix(".tmp")
+        tmp = path.with_name(f"{path.stem}.{secrets.token_hex(4)}.tmp")
         tmp.write_text(json.dumps(chat_data, ensure_ascii=False), encoding="utf-8")
         tmp.replace(path)
         return jsonify(ok=True, id=chat_id, title=new_title)
@@ -1042,7 +1110,7 @@ def delete_chat():
 import ast as _ast  # for Python CI validation
 
 # Allowlist: only these files may be updated (relative to REPO_DIR)
-UPDATABLE_FILES = {"app.py", "index.html"}
+UPDATABLE_FILES = {"app.py", "index.html", "auto_updater.py"}
 
 # ── CI Validation ────────────────────────────────────
 def ci_validate_python(code: str, filename: str) -> tuple[bool, list[str]]:
@@ -2255,6 +2323,145 @@ def get_version():
         log=data.get("log", [])[-10:]
     )
 
+
+# ─────────────── DUAL-KIND AUTO-UPDATE ENGINE ROUTES ───────────────
+@app.get("/api/auto_update/config")
+def api_auto_update_get_config():
+    """Return active Google/Anthropic provider, model, masked key status, pricing & Flask status."""
+    return jsonify(
+        get_public_auto_update_config(
+            flask_port=_current_bound_port(),
+            app_version=VERSION,
+            groq_key_count=len(pool.keys),
+        )
+    )
+
+
+@app.post("/api/auto_update/config")
+def api_auto_update_set_config():
+    """Switch active topbar Auto-Update provider ('google'|'anthropic') and/or model."""
+    data = request.get_json(silent=True) or {}
+    provider = data.get("provider")
+    model = data.get("model")
+    try:
+        set_auto_update_selection(provider=provider, model=model)
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+    pub = get_public_auto_update_config(
+        flask_port=_current_bound_port(),
+        app_version=VERSION,
+        groq_key_count=len(pool.keys),
+    )
+    broadcast_event({"type": "auto_update_config", "config": pub})
+    return jsonify(pub)
+
+
+@app.get("/api/auto_update/models")
+def api_auto_update_models():
+    """Return curated + live provider models for Google Gemini or Anthropic Claude."""
+    provider = (request.args.get("provider") or "").strip().lower()
+    if not provider:
+        cfg = get_public_auto_update_config(
+            flask_port=_current_bound_port(),
+            app_version=VERSION,
+            groq_key_count=len(pool.keys),
+        )
+        provider = cfg["active_provider"]
+    return jsonify(fetch_provider_models(provider))
+
+
+@app.post("/api/auto_update/keys/import")
+def api_auto_update_keys_import():
+    """Import Google ('AIza…'), Anthropic ('sk-ant-…'), and/or Groq ('gsk_…') keys from text or file."""
+    return import_keys()
+
+
+@app.post("/api/auto_update/keys/load-default")
+def api_auto_update_keys_load_default():
+    """Auto-discover and load Groq + Google + Anthropic keys from ~/Downloads/API/ (masked only)."""
+    res = discover_keys_from_downloads(groq_pool=pool)
+    pub = get_public_auto_update_config(
+        flask_port=_current_bound_port(),
+        app_version=VERSION,
+        groq_key_count=len(pool.keys),
+    )
+    broadcast_event({"type": "keys_updated", "count": len(pool.keys), "auto_update": pub})
+    return jsonify({**res, "auto_update": pub, "groq_count": len(pool.keys)})
+
+
+@app.post("/api/auto_update/keys/delete")
+def api_auto_update_keys_delete():
+    """Delete a specific Kind 2 key by fingerprint id, or clear all keys for a provider."""
+    data = request.get_json(silent=True) or {}
+    provider = (data.get("provider") or "").strip().lower()
+    key_id = (data.get("id") or "").strip()
+    clear_all = bool(data.get("clear_all"))
+    removed = delete_auto_update_key(provider=provider, key_id=key_id, clear_all=clear_all)
+    if not removed and not clear_all:
+        return jsonify(ok=False, error="Auto-update key not found"), 404
+    pub = get_public_auto_update_config(
+        flask_port=_current_bound_port(),
+        app_version=VERSION,
+        groq_key_count=len(pool.keys),
+    )
+    broadcast_event({"type": "auto_update_config", "config": pub})
+    return jsonify(ok=True, auto_update=pub)
+
+
+@app.get("/api/auto_update/status")
+def api_auto_update_status():
+    """Return live auto-update job state, recent events, and Flask server health."""
+    return jsonify(ok=True, **get_job_status(flask_port=_current_bound_port(), app_version=VERSION))
+
+
+@app.get("/api/auto_update/ledger")
+def api_auto_update_ledger():
+    """Return cumulative USD cost and history of surgical auto-updates."""
+    ledger = load_auto_update_ledger()
+    return jsonify(
+        ok=True,
+        total_spent_usd=round(float(ledger.get("total_spent_usd", 0.0)), 6),
+        updates_count=int(ledger.get("updates_count", 0)),
+        history=ledger.get("history", [])[-30:],
+    )
+
+
+@app.post("/api/auto_update/run")
+def api_auto_update_run():
+    """
+    Execute the 6-stage surgical auto-update pipeline using Google or Anthropic API.
+    Streams live educational split-screen events (`auto_update_event`) over `/api/events`
+    and prints the exact USD cost receipt in both UI and server terminal.
+    JSON Body: { "instruction": "...", "provider": "google"|"anthropic", "model": "...", "dry_run": false }
+    """
+    data = request.get_json(silent=True) or {}
+    instruction = (data.get("instruction") or "").strip()
+    provider = data.get("provider")
+    model = data.get("model")
+    dry_run = bool(data.get("dry_run", False))
+    target_files = data.get("target_files") if isinstance(data.get("target_files"), list) else None
+
+    status_code, payload = run_surgical_auto_update(
+        instruction=instruction,
+        provider=provider,
+        model=model,
+        dry_run=dry_run,
+        target_files=target_files,
+        git_root=GIT_ROOT,
+        repo_dir=REPO_DIR,
+        update_dir=UPDATE_DIR,
+        updatable_files=UPDATABLE_FILES,
+        ci_run_all_fn=ci_run_all,
+        bump_version_fn=bump_app_version,
+        git_run_fn=git_run,
+        git_commit_and_push_fn=git_commit_and_push,
+        broadcast_fn=broadcast_event,
+        term_print_fn=_term_print,
+        flask_port=_current_bound_port(),
+        current_version_str=VERSION,
+    )
+    return jsonify(payload), status_code
+
 @app.get("/health")
 def health():
     return jsonify(app="groq-modern-chat", version=VERSION, ok=True, default_model=DEFAULT_MODEL, has_keys=len(pool.keys) > 0)
@@ -2420,6 +2627,65 @@ def run_live_selftest() -> dict:
             and r_er.status_code == 403
         )
         record("Elevate Media board, WhatsApp & Resolve allowlist", "GET /api/elevate/board + /whatsapp + allowlist", elev_ok, f"projects={len(j_eb.get('projects', []))}, msgs={j_ew.get('count')}, evil_tool→HTTP {r_er.status_code}")
+
+        # 14. Dual-Kind API noise parser (Groq + Google Cloud/Gemini + Anthropic Claude)
+        syn_groq = "gsk_" + ("T" * 28)
+        syn_anth = "sk-" + "ant-" + ("T" * 28)
+        syn_goog = "AI" + "za" + ("T" * 35)
+        noisy_blob = f"export GROQ={syn_groq}\nCLAUDE_KEY='{syn_anth}' # comment\n" + json.dumps({"google": syn_goog})
+        parsed_multi = extract_multi_provider_keys(noisy_blob)
+        multi_ok = (
+            parsed_multi["groq"] == [syn_groq]
+            and parsed_multi["anthropic"] == [syn_anth]
+            and parsed_multi["google"] == [syn_goog]
+        )
+        record("Dual-Kind API noise parser (Groq / Google / Anthropic)", "extract_multi_provider_keys()", multi_ok, f"groq={len(parsed_multi['groq'])}, google={len(parsed_multi['google'])}, anthropic={len(parsed_multi['anthropic'])}")
+
+        # 15. Auto-Update provider & model switch (Google <-> Anthropic)
+        r_cfg0 = c.get("/api/auto_update/config")
+        j_cfg0 = r_cfg0.get_json(silent=True) or {}
+        orig_prov = j_cfg0.get("active_provider", "google")
+        orig_mod = (j_cfg0.get("active_models") or {}).get(orig_prov)
+        r_sw1 = c.post("/api/auto_update/config", json={"provider": "anthropic", "model": "claude-sonnet-4-5"})
+        j_sw1 = r_sw1.get_json(silent=True) or {}
+        r_sw2 = c.post("/api/auto_update/config", json={"provider": "google", "model": "gemini-2.5-flash"})
+        j_sw2 = r_sw2.get_json(silent=True) or {}
+        c.post("/api/auto_update/config", json={"provider": orig_prov, "model": orig_mod})
+        r_m_g = c.get("/api/auto_update/models?provider=google")
+        r_m_a = c.get("/api/auto_update/models?provider=anthropic")
+        sw_ok = (
+            r_sw1.status_code == 200
+            and j_sw1.get("active_provider") == "anthropic"
+            and r_sw2.status_code == 200
+            and j_sw2.get("active_provider") == "google"
+            and r_m_g.status_code == 200
+            and r_m_a.status_code == 200
+        )
+        record("Topbar Auto-Update switch & model catalog (Google / Anthropic)", "GET+POST /api/auto_update/config + /models", sw_ok, f"anthropic→{j_sw1.get('active_model')}, google→{j_sw2.get('active_model')}")
+
+        # 16. Surgical patch engine + unified diff + USD cost calculator
+        sample_orig = {"index.html": "<html><head><title>Queen</title></head><body><div id=\"topbar\">Old</div></body></html>"}
+        sample_edits = [{
+            "file": "index.html",
+            "section": "#topbar",
+            "action": "replace",
+            "search": "<div id=\"topbar\">Old</div>",
+            "content": "<div id=\"topbar\">Surgical New</div>",
+        }]
+        patched_map, diff_map, _ = apply_surgical_edits(sample_orig, sample_edits, UPDATABLE_FILES)
+        cost_g = calculate_auto_update_cost("google", "gemini-2.5-flash", 2000, 400)
+        cost_a = calculate_auto_update_cost("anthropic", "claude-sonnet-4-5", 2000, 400)
+        r_st = c.get("/api/auto_update/status")
+        r_ld = c.get("/api/auto_update/ledger")
+        surg_ok = (
+            "Surgical New" in patched_map.get("index.html", "")
+            and "+<html><head><title>Queen</title></head><body><div id=\"topbar\">Surgical New</div></body></html>" in diff_map.get("index.html", "")
+            and abs(cost_g["total_cost_usd"] - 0.0016) < 1e-9
+            and abs(cost_a["total_cost_usd"] - 0.012) < 1e-9
+            and r_st.status_code == 200
+            and r_ld.status_code == 200
+        )
+        record("Surgical patch engine, unified diff & USD cost calculator", "apply_surgical_edits() + calculate_auto_update_cost()", surg_ok, f"gemini_cost={cost_g['formatted_usd']}, claude_cost={cost_a['formatted_usd']}")
 
     summary_color = "\033[1;32m" if failed == 0 else "\033[1;31m"
     _term_print("\033[1;35m" + "─" * 70 + "\033[0m")

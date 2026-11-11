@@ -1,7 +1,7 @@
 # Groq AI Studio: takeover
 
 Repository: markoboskoauroville/groq_ai_studio (public, unpromoted: no README, no description; this file is the description).
-Status 11.11.2026: version v3 runs on this Mac, port 8765, `/health` answers `{"app":"groq-modern-chat","version":"v3","ok":true}`.
+Status 11.11.2026: version v4 runs on this Mac, port 8765, `/health` answers `{"app":"groq-modern-chat","version":"v4","ok":true}`.
 Marko, 11.11.2026: "We are developing this app now." Nothing is compiled: it is Python and one HTML file, so there is no
 GitHub Actions build; it runs from source.
 Auto-update repo: `markoboskoauroville/groq-auto-update` (public). CI-validated updates push here automatically.
@@ -28,9 +28,10 @@ cooldowns, `t` run live visible self-test suite, `h` help.
 ## Files
 | File | Job |
 |---|---|
-| `qwen_app/app.py` | the server: unified key pool (`groq_pool.py`), failover, local Origin/CSRF + `X-Queen-Token` security guard, streaming chat with exact Groq usage (`x_groq.usage`), ledger, GitHub reads, Star Menu & Startup proxy (`/api/star/*`), Voice Engine & Subtitles proxy (`/api/voice/*`), Elevate Media production endpoints (`/api/elevate/*`), backdoor, port finder, CI pipeline, self-update engine, chat persistence, version management (about 2500 lines) |
-| `qwen_app/index.html` | the whole client: sidebar with sessions, spend, model select, zoom, Prose / Code Box toggle, live Stop button, `🔊 Speak` per message, attach and drag-drop, modals for keys, persona, GitHub, Star Menu (`⭐`), Voice Engine (`🔊`), Elevate Media (`🎬`), billing, settings, self-update panel (`__VERSION__`, `__DEFAULT_MODEL__`, and `__API_TOKEN__` replaced by the server) |
-| `version.json` | current version number (`v3`) and update history log |
+| `qwen_app/app.py` | the server: unified key pool (`groq_pool.py`), Dual-Kind API loader (`Groq` chat + `Google`/`Anthropic` auto-update), failover, local Origin/CSRF + `X-Queen-Token` security guard, streaming chat with exact Groq usage (`x_groq.usage`), ledger, GitHub reads, Star Menu & Startup proxy (`/api/star/*`), Voice Engine & Subtitles proxy (`/api/voice/*`), Elevate Media production endpoints (`/api/elevate/*`), backdoor, port finder, CI pipeline, chunked & surgical auto-update routes (`/api/auto_update/*`), chat persistence, version management |
+| `qwen_app/auto_updater.py` | pre-briefed surgical auto-update engine: noise-tolerant multi-provider key parser (`gsk_`, `AIza`, `sk-ant-`), `0600` `~/.groq/auto_update_keys.json` store, Google Gemini & Anthropic Claude SSE streaming clients, `<queen_update>` surgical patcher + unified diff generator, `~/.groq` local sync, and exact USD cost ledger (`~/.groq/auto_update_ledger.json`) |
+| `qwen_app/index.html` | the whole client: topbar Auto-Update Provider Switch (`Google` vs `Anthropic`) + Model Switch + `⚡ Update App` + `◫` Split Toggle, automatic 50/50 "Learning by Watching" Split-Screen Software Engineer Studio (6 educational stages, live model stream, colorized unified diff, USD cost receipt card), Dual-Kind API Code Section (`Groq` vs `Google`/`Anthropic`), sidebar with sessions & spend, Prose / Code Box toggle, live Stop button, `🔊 Speak` per message, modals for Star Menu (`⭐`), Voice Engine (`🔊`), Elevate Media (`🎬`), GitHub (`🐙`), billing, settings, chunk self-update |
+| `version.json` | current version number (`v4`) and update history log |
 | `groq_pool.py` | unified key pool module shared by BOTH `qwen_app/app.py` (`DynamicKeyPool`) and `groq-cli` (`KeyPool`): `extract_keys_from_noise`, sticky failover, cooldown persistence |
 | `groq_cli.py`, `groq-cli`, `qwen`, `groq-chat` | the terminal clients and launchers |
 | `install.sh` | copies the code into ~/.groq, makes the venv, installs `requirements.txt`; reads no key |
@@ -76,7 +77,8 @@ reply and telemetry come back in the response), `/api/chats/*` (server-side chat
 `GET /api/star/startup` & `POST /api/star/action` (Star Menu & Startup 55-app control via `STAR_API` `:8863`),
 `GET /api/voice/speaking`, `GET /api/voice/voices`, `POST /api/voice/speak`, `/api/voice/pause`, `/api/voice/stop`, `/api/voice/hear` (Local Voice Engine & on-screen subtitles via `MANTRA_VOICE` `:8837`),
 `GET /api/elevate/board`, `GET /api/elevate/whatsapp`, `POST /api/elevate/whatsapp/draft`, `GET /api/elevate/drive-comments`, `POST /api/elevate/fetch-image`, `POST /api/elevate/gemini-chrome`, `GET /api/elevate/gemini-status`, `POST /api/elevate/resolve` (Elevate Media end-to-end production workflow),
-`GET/POST /api/test/live` (runs 13 live self-tests and prints colorized progress to Queen's terminal window), `POST /api/terminal/log` (prints live commands/banners to Queen's terminal console), `/api/github/*`.
+`GET/POST /api/test/live` (runs 16 live self-tests and prints colorized progress to Queen's terminal window), `POST /api/terminal/log` (prints live commands/banners to Queen's terminal console),
+`GET/POST /api/auto_update/config`, `GET /api/auto_update/models`, `POST /api/auto_update/keys/import`, `POST /api/auto_update/keys/load-default`, `POST /api/auto_update/keys/delete`, `GET /api/auto_update/status`, `GET /api/auto_update/ledger`, `POST /api/auto_update/run` (Dual-Kind Google/Anthropic surgical auto-update pipeline + automatic 50/50 split-screen SSE stream + USD cost receipt), `/api/github/*`.
 
 All `/api/*` routes are protected by `local_api_security_guard` (rejects cross-origin `Origin` / `Referer` / `Sec-Fetch-Site: cross-site` with HTTP 403; accepts `X-Queen-Token` from `~/.groq/api_token` and local `curl` / `127.0.0.1` UI calls).
 
@@ -98,4 +100,4 @@ session: a real answer from every model, failover with a truly exhausted key, th
 Marko's Groq model research (Groq has no image model, models researched for TTT) and scribe's Groq transcription use the same
 Groq keys (numbered keys in ~/Downloads/API/groq-api.txt). KeyringTester checks that these keys work and has read the image with
 `qwen/qwen3.8-27b` (14.10.2026). Work on this app: edit here in ~/Developer/groq_ai_studio, run `./install.sh`, restart `qwen`.
-Skills (registered in `.agents/skills.json`): `skills/groq-ai-studio/SKILL.md`, `skills/groq-ai-studio-testing/SKILL.md` (visible macOS Terminal runner: `skills/groq-ai-studio-testing/scripts/run_visible_tests.sh`), `skills/star-menu-computer-control/SKILL.md`, and `skills/elevate-media-production/SKILL.md`.
+Skills (registered in `.agents/skills.json`): `skills/groq-ai-studio/SKILL.md`, `skills/groq-ai-studio-testing/SKILL.md` (visible macOS Terminal runner: `skills/groq-ai-studio-testing/scripts/run_visible_tests.sh`), `skills/queen-auto-update-pipeline/SKILL.md` (Dual-Kind API Loader + Surgical Auto-Update Pipeline + Split-Screen UI blueprint), `skills/star-menu-computer-control/SKILL.md`, and `skills/elevate-media-production/SKILL.md`.

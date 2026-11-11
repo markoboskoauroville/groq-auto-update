@@ -1,6 +1,6 @@
 {
-  "version": 3,
-  "updated_at": "2026-11-11T15:20:00+0100",
+  "version": 4,
+  "updated_at": "2026-11-11T19:54:00+0100",
   "log": [
     {
       "version": 1,
@@ -24,6 +24,18 @@
         "groq_pool.py",
         "qwen_app/app.py",
         "qwen_app/index.html"
+      ]
+    },
+    {
+      "version": 4,
+      "timestamp": "2026-11-11T19:54:00+0100",
+      "message": "v4: Dual-Kind API Loader (Groq LPU Chat vs Google Cloud/Gemini & Anthropic Claude Auto-Update), Topbar Auto-Update Provider+Model Switch, Surgical Patch Pipeline with USD Cost Receipt, and Learning-by-Watching Automatic Split-Screen Engineer Studio",
+      "files": [
+        "qwen_app/auto_updater.py",
+        "qwen_app/app.py",
+        "qwen_app/index.html",
+        "install.sh",
+        "skills/queen-auto-update-pipeline/SKILL.md"
       ]
     }
   ]

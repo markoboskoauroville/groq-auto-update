@@ -3,5 +3,12 @@
     {
       "path": "skills"
     }
+  ],
+  "skills": [
+    "skills/groq-ai-studio/SKILL.md",
+    "skills/groq-ai-studio-testing/SKILL.md",
+    "skills/queen-auto-update-pipeline/SKILL.md",
+    "skills/star-menu-computer-control/SKILL.md",
+    "skills/elevate-media-production/SKILL.md"
   ]
 }

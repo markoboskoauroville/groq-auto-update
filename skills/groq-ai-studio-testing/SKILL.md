@@ -23,7 +23,7 @@ What this script does automatically:
 1. Uses `osascript` to open and activate macOS **Terminal.app** right in front of the user's eyes.
 2. Runs `./install.sh` and restarts Queen (`qwen_app/app.py`) on port 8765.
 3. Calls `POST /api/terminal/log` to print a live banner in Queen's server console.
-4. Calls `POST /api/test/live` (Queen's built-in Python server self-test backdoor), which runs all 13 non-destructive checks and prints colorized `$ command` + `✓ PASS` / `✗ FAIL` lines in **both** the Terminal window and Queen's server log.
+4. Calls `POST /api/test/live` (Queen's built-in Python server self-test backdoor), which runs all 16 non-destructive checks (including Dual-Kind API noise extraction, Google/Anthropic topbar switch & model catalog, and surgical patch + unified diff + USD cost calculator) and prints colorized `$ command` + `✓ PASS` / `✗ FAIL` lines in **both** the Terminal window and Queen's server log.
 5. Sends a live verification prompt via `POST /api/remote/send` asking Queen to confirm her self-update pipeline awareness (visible live in both the browser UI and Terminal).
 6. Tees the complete output to `/tmp/queen_visible_test.log` and waits for completion so the agent can verify exit code `0`.
 
@@ -346,22 +346,27 @@ echo "Results: $PASS passed, $FAIL failed"
 | 8 | Python 3.10 f-string in `run_visible_tests.sh` rejected backslashes inside `{...}` | **Fixed** — extracted dict lookups to variables before printing |
 | 9 | Streaming token counts looked inflated (~2,600 tok for short turns) because `chunk.x_groq.usage` was ignored | **Fixed** — `_extract_chunk_usage()` reads `x_groq.usage` + `reasoning_tokens` |
 | 10 | Stop button (`btn-send.stop`) was disabled (`btnSend.disabled = true`) while streaming | **Fixed** — kept enabled during `isBusy` and wired to `abortCtrl.abort()` |
+| 11 | Concurrent `POST /api/chats/save` requests raced on a shared `.tmp` file (`FileNotFoundError`) | **Fixed** — unique per-write temp filenames (`{stem}.{random_hex}.tmp`) in `app.py` and `auto_updater.py` |
 
-## Test Results (11 Nov 2026, v3 — Visible Terminal Run)
+## Test Results (11 Nov 2026, v4 — Visible Terminal Run)
 
 | Test | Result | Notes |
 |------|--------|-------|
-| 1. Health check | ✓ PASS | `{"ok":true,"version":"v3"}` |
-| 2. Version endpoint | ✓ PASS | Returns `v3`, `auto_update_repo=markoboskoauroville/groq-auto-update` |
+| 1. Health check | ✓ PASS | `{"ok":true,"version":"v4"}` |
+| 2. Version endpoint | ✓ PASS | Returns `v4`, `auto_update_repo=markoboskoauroville/groq-auto-update` |
 | 3. CI reject (bad Python) | ✓ PASS | HTTP 422, 2 CI errors (syntax + size) |
 | 4. CI reject (bad HTML) | ✓ PASS | HTTP 422, 4 CI errors (missing `</html>`, tag balance, title, size) |
-| 5. Allowlist enforcement | ✓ PASS | HTTP 403 for `evil.py` |
+| 5. Allowlist enforcement | ✓ PASS | HTTP 403 for `evil.py` (`UPDATABLE_FILES={"app.py","index.html","auto_updater.py"}`) |
 | 6. Status + backups | ✓ PASS | HTTP 200, `staged=0`, backups listed |
 | 7. Chat CRUD | ✓ PASS | save, auto-title (`Live self-test ping`), rename (`Renamed Self-Test`), delete→HTTP 404 |
-| 8. Key pool status | ✓ PASS | Unified `groq_pool.py` (`DynamicKeyPool` + `KeyPool`), masked keys returned |
-| 9. System prompt awareness | ✓ PASS | `build_queen_system_prompt()` (2,085 chars) includes Self-Update, Star Menu, Voice Engine, Elevate Media |
+| 8. Key pool status | ✓ PASS | Dual-Kind `/api/keys` returns masked Groq pool + `auto_update` status |
+| 9. System prompt awareness | ✓ PASS | `build_queen_system_prompt()` (2,762 chars) includes Surgical Auto-Update, Star Menu, Voice Engine, Elevate Media |
 | 10. Local API Origin/CSRF guard | ✓ PASS | Evil `Origin` blocked with HTTP 403; valid `X-Queen-Token` allowed with HTTP 200 |
 | 11. Star Menu & Startup proxy | ✓ PASS | `GET /api/star/startup` → HTTP 200, 11 folders, `star_api_online=True` |
 | 12. Voice Engine status proxy | ✓ PASS | `GET /api/voice/speaking` → HTTP 200, `voice_online=True` |
 | 13. Elevate Media hub & allowlist | ✓ PASS | `GET /api/elevate/board` (4 projects), `/api/elevate/whatsapp` (5 msgs), evil Resolve tool blocked with HTTP 403 |
-| 14. Backdoor live chat (`v3`) | ✓ PASS | Queen summarized her v3 Self-Update, Star Menu, Voice Engine, and Elevate Media suite (`729 in / 71 out`, `157.6 tok/s`, `$0.000867`) |
+| 14. Dual-Kind API noise parser | ✓ PASS | `extract_multi_provider_keys()` cleanly separates `groq`, `google`, and `anthropic` tokens |
+| 15. Topbar Auto-Update switch | ✓ PASS | `GET+POST /api/auto_update/config` + `/models` toggles `Google` (`gemini-2.5-flash`) & `Anthropic` (`claude-sonnet-4-5`) |
+| 16. Surgical patch & USD cost | ✓ PASS | `apply_surgical_edits()` + `calculate_auto_update_cost()` (`$0.001600` Gemini, `$0.012000` Claude) |
+| 17. Live Surgical Auto-Update (`claude-sonnet-4-5`) | ✓ PASS | `POST /api/auto_update/run` completed in `8.52s`, passed CI gate, printed exact cost **`$0.026469 USD`** (`6,893 in / 386 out`) |
+| 18. Backdoor live chat (`v4`) | ✓ PASS | Queen confirmed v4 Dual-Kind Loader & Split-Screen Surgical Pipeline (`952 in / 91 out`, `$0.001126 USD`) |

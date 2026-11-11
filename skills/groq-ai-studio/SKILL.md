@@ -50,7 +50,8 @@ The app can update its own source files through a chunked transfer system:
 | GET | `/api/events` | SSE live events |
 | GET/POST | `/api/keys/*` | Key management |
 | GET/POST | `/api/chats/*` | Chat persistence |
-| GET/POST | `/api/self_update/*` | Self-update pipeline |
+| GET/POST | `/api/self_update/*` | Self-update pipeline (chunk dispatcher) |
+| GET/POST | `/api/auto_update/*` | Surgical Auto-Update Pipeline (`Google` Gemini / `Anthropic` Claude switch, models, keys, 6-stage SSE runner, USD ledger) |
 | GET/POST | `/api/github/*` | GitHub reader |
 | GET | `/api/models` | Available models + live/catalog pricing |
 | GET | `/api/billing` | Spend + rate limits |
@@ -81,6 +82,8 @@ All previously open items completed in v3:
 - 11.11.2026: Testing session — fixed 3 bugs: CI false positives (bracket counting demoted to warnings), GIT_ROOT now detects installed vs source repo, assemble writes to both copies. All tests pass. Version bumped to v2. Testing skill written at `skills/groq-ai-studio-testing/SKILL.md`.
 - 11.11.2026: Added `.agents/skills.json` manifest, visible macOS Terminal test runner (`skills/groq-ai-studio-testing/scripts/run_visible_tests.sh`), Python server live-test backdoors (`POST /api/test/live`, `POST /api/terminal/log`, `'t'` terminal key), and `build_queen_system_prompt()` so Queen always knows how she self-updates. Verified 9/9 live checks + backdoor chat in Terminal.app.
 - 11.11.2026: v3 upgrade — finished all unfinished features: `/api/star/*` + `⭐` Star Menu UI, `/api/voice/*` + `🔊` Voice Engine UI & per-message Speak button, `/api/elevate/*` + `🎬` Elevate Media Production Hub UI, unified `groq_pool.py`, `local_api_security_guard` (`Origin`/`Referer`/`X-Queen-Token`), `x_groq.usage` exact token tracking, and working Stop button. Verified 13/13 live checks + backdoor chat visibly in macOS Terminal.app.
+- 11.11.2026: v4 (Step 1) — Created minute-detail `skills/queen-auto-update-pipeline/SKILL.md` covering Dual-Kind API Loader (`Groq` vs. `Google`/`Anthropic`), pre-briefed surgical patching, USD cost ledger, and "Learning by Watching" split-screen UI; updated `.gitignore`, `install.sh` (copies `qwen_app/auto_updater.py`), and `.agents/skills.json`.
+- 11.11.2026: v4 complete — Built `qwen_app/auto_updater.py`, wired `/api/auto_update/*` & Dual-Kind `/api/keys*` into `qwen_app/app.py`, added Topbar Auto-Update Switch (`Google` | `Anthropic` + Model Picker) + Automatic 50/50 "Learning by Watching" Split-Screen Engineer Studio in `qwen_app/index.html`, fixed concurrent `.tmp` atomic-write race in `save_chat`, and verified 16/16 live checks + live Anthropic `claude-sonnet-4-5` surgical update (`8.52s`, `$0.026469 USD`) visibly in macOS Terminal.app.
 
 ## Mistakes already made
 - Looking for `qwen` with `which` in a tool shell: it is in ~/.groq, on the PATH only through ~/.zshrc.

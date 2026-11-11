@@ -13,4 +13,10 @@ __pycache__/
 incoming_update/
 chats/
 api_token
+auto_update_keys.json
+auto_update_ledger.json
+Claude.api.txt
+HAIKU-KEY.txt
+gemini_key.txt
+VOICES_gemini-free-tier-api.txt
 .DS_Store
