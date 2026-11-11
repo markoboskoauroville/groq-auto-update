@@ -10,7 +10,7 @@ Read `TAKEOVER.md` in the repo first: it holds everything known (files, commands
 
 ## Space
 - Source: ~/Developer/groq_ai_studio (public, no README by rule). Running copy: ~/.groq (`./install.sh` copies source there).
-- Auto-update repo: `markoboskoauroville/groq-auto-update` (private). CI-validated updates are pushed here automatically.
+- Auto-update repo: `markoboskoauroville/groq-auto-update` (public). CI-validated updates are pushed here automatically.
 - Start: `qwen` (port 8765, first free port after it; `~/.groq/app_url` says which). Health: `curl http://127.0.0.1:8765/health`.
 - Keys: ~/.groq/keys.txt and ~/Downloads/API/groq-api.txt: never print, never commit. Masked form only.
 - Chats: ~/.groq/chats/ — server-side JSON files, local only, NOT in git.
@@ -54,6 +54,8 @@ The app can update its own source files through a chunked transfer system:
 | GET/POST | `/api/github/*` | GitHub reader |
 | GET | `/api/models` | Available models |
 | GET | `/api/billing` | Spend + rate limits |
+| GET/POST | `/api/test/live` | Built-in visible self-test backdoor (prints 9 checks to Queen's terminal + returns JSON) |
+| POST | `/api/terminal/log` | Print live `$ command` / status banners into Queen's terminal console |
 
 ## Rules
 1. Edit in the repo, run `./install.sh`, restart `qwen`; never edit only ~/.groq.
@@ -68,10 +70,16 @@ Add a token or Origin check to the local API (TAKEOVER, Dangers); merge the two 
 ## Run log
 - 11.11.2026: repo created from the running v09; skill written. Backdoor chat tested (3 turns, works); token count per turn looks inflated, check it.
 - 11.11.2026: v1 upgrade — CI pipeline, self-update panel, auto-update GitHub repo, version tracking, server-side chat persistence, chat rename.
+- 11.11.2026: Added `GEMINI.md` workspace rule — mandatory handover + skill update after every code change. Both repos now public.
+- 11.11.2026: Testing session — fixed 3 bugs: CI false positives (bracket counting demoted to warnings), GIT_ROOT now detects installed vs source repo, assemble writes to both copies. All tests pass. Version bumped to v2. Testing skill written at `skills/groq-ai-studio-testing/SKILL.md`.
+- 11.11.2026: Added `.agents/skills.json` manifest, visible macOS Terminal test runner (`skills/groq-ai-studio-testing/scripts/run_visible_tests.sh`), Python server live-test backdoors (`POST /api/test/live`, `POST /api/terminal/log`, `'t'` terminal key), and `build_queen_system_prompt()` so Queen always knows how she self-updates. Verified 9/9 live checks + backdoor chat in Terminal.app.
 
 ## Mistakes already made
 - Looking for `qwen` with `which` in a tool shell: it is in ~/.groq, on the PATH only through ~/.zshrc.
 - Treating a `gsk_` grep as a secret check: compare the real keys by exact match instead (script in the 11.11.2026 close).
+- CI truncation heuristics (raw bracket/quote counting) block valid code: AST parse is the real gate; raw counts are informational only.
+- Starting Queen headless without `< /dev/null`: the keyboard listener kills the process when stdin closes. Use `nohup ... < /dev/null > /tmp/qwen.log 2>&1 &`.
+- `GIT_ROOT` resolved to `~/.groq` (installed copy) instead of source repo: git operations fail. Fixed with `.git` directory detection.
 
 ## Talking to it
 `/api/remote/send` keeps the whole conversation in the server (`active_messages`, last 80 sent), so a test chat continues across

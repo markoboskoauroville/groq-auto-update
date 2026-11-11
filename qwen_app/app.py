@@ -175,6 +175,42 @@ def extract_keys_from_noise(text: str) -> list[str]:
             valid_keys.append(clean)
     return list(dict.fromkeys(valid_keys))
 
+def build_queen_system_prompt(user_persona: str = "") -> str:
+    """
+    Build Queen's always-on identity and self-update architecture prompt so the
+    model always knows who it is and how its CI-gated self-update pipeline works.
+    """
+    base = (
+        f"You are Queen (`qwen`), the AI assistant powering Marko's local Groq AI Studio "
+        f"(currently running version {VERSION} on macOS at http://127.0.0.1:8765).\n"
+        f"Your local source repository is `~/Developer/groq_ai_studio` (installed to `~/.groq`), "
+        f"and your two core source files are `qwen_app/app.py` (Python/Flask backend) and "
+        f"`qwen_app/index.html` (web UI).\n\n"
+        f"YES — YOU CAN SELF-UPDATE! Never say you cannot self-update. You have a built-in, "
+        f"CI-gated Self-Update Pipeline:\n"
+        f"1. Web UI (`🔧` Self-Update button in topbar) or HTTP API:\n"
+        f"   - Stage code chunks: `POST http://127.0.0.1:8765/api/self_update/chunk` with "
+        f"`{{\"file\": \"app.py\" or \"index.html\", \"part\": 1, \"content\": \"...\"}}`\n"
+        f"   - Assemble & deploy: `POST http://127.0.0.1:8765/api/self_update/assemble` with "
+        f"`{{\"file\": \"app.py\" or \"index.html\", \"commit_message\": \"...\"}}`\n"
+        f"2. CI Gate (`ci_run_all`): Automatically validates Python AST syntax, HTML tag balance, "
+        f"truncation, and file size (>=30% of existing file) BEFORE touching disk. Broken or truncated "
+        f"code is rejected with HTTP 422.\n"
+        f"3. Deploy & GitHub Sync: When CI passes, the pipeline backs up the old file, writes the new "
+        f"file to both `~/.groq/qwen_app/` and `~/Developer/groq_ai_studio/qwen_app/`, bumps `version.json` "
+        f"(shown in the green `{VERSION}` badge in the top-right corner), and commits + pushes to BOTH "
+        f"public GitHub repos: `markoboskoauroville/groq_ai_studio` and `{AUTO_UPDATE_REPO}`.\n"
+        f"4. GitHub Reader (`🐙` button in topbar): Can load and attach your own live files from "
+        f"`{AUTO_UPDATE_REPO}` or `markoboskoauroville/groq_ai_studio` into this chat so you can inspect "
+        f"and modify your own code.\n"
+        f"5. Live Visible Self-Test Backdoor: `POST http://127.0.0.1:8765/api/test/live` (or pressing `'t'` "
+        f"in the server terminal).\n"
+    )
+    if user_persona:
+        return f"{base}\nAdditional Persona / Instructions:\n{user_persona}"
+    return base
+
+
 def detect_code_intent(text: str) -> bool:
     """Detect if the prompt intends or requests output in a code box."""
     if not text:
@@ -552,9 +588,7 @@ def remote_send():
     user_msg = {"role": "user", "content": prompt, "mode": mode, "timestamp": time.time()}
     active_messages.append(user_msg)
 
-    groq_msgs = []
-    if system_prompt:
-        groq_msgs.append({"role": "system", "content": system_prompt})
+    groq_msgs = [{"role": "system", "content": build_queen_system_prompt(system_prompt)}]
     if mode == "code":
         groq_msgs.append({
             "role": "system",
@@ -701,9 +735,7 @@ def chat():
     if auto_detected_code and output_mode != "code":
         output_mode = "code"
 
-    groq_msgs = []
-    if system_prompt:
-        groq_msgs.append({"role": "system", "content": system_prompt})
+    groq_msgs = [{"role": "system", "content": build_queen_system_prompt(system_prompt)}]
     if output_mode == "code":
         groq_msgs.append({
             "role": "system",
@@ -1707,6 +1739,150 @@ def get_version():
 def health():
     return jsonify(app="groq-modern-chat", version=VERSION, ok=True, default_model=DEFAULT_MODEL, has_keys=len(pool.keys) > 0)
 
+
+# ── Live Visible Testing & Terminal Backdoor ─────────────────────────
+def _term_print(line: str):
+    """Write a line to the server terminal stdout immediately (cbreak-safe)."""
+    sys.stdout.write(f"\r{line}\r\n")
+    sys.stdout.flush()
+
+
+@app.post("/api/terminal/log")
+def terminal_log():
+    """
+    Backdoor entry point allowing external scripts/agents to print live
+    commands and test status directly into Queen's running server window.
+    JSON Body: { "message": "...", "level": "info|cmd|pass|fail" }
+    """
+    data = request.get_json(silent=True) or {}
+    msg = str(data.get("message") or "").strip()
+    level = str(data.get("level") or "info").lower()
+    if not msg:
+        return jsonify(error="Missing 'message'"), 400
+
+    colors = {
+        "cmd": "\033[1;36m$ ",
+        "pass": "\033[1;32m✓ ",
+        "fail": "\033[1;31m✗ ",
+        "info": "\033[1;33m[LIVE] ",
+    }
+    prefix = colors.get(level, colors["info"])
+    ts = time.strftime("%H:%M:%S")
+    _term_print(f"\033[90m[{ts}]\033[0m {prefix}{msg}\033[0m")
+    broadcast_event({"type": "terminal_log", "level": level, "message": msg, "ts": ts})
+    return jsonify(ok=True, ts=ts, level=level, message=msg)
+
+
+def run_live_selftest() -> dict:
+    """
+    Execute the non-destructive live verification suite while printing every
+    step, HTTP status, and outcome directly to Queen's server terminal window.
+    """
+    ts = time.strftime("%Y-%m-%d %H:%M:%S")
+    _term_print("\033[1;35m" + "═" * 70 + "\033[0m")
+    _term_print(f"\033[1;35m  QUEEN LIVE SELF-TEST SUITE — {VERSION} ({ts})\033[0m")
+    _term_print("\033[1;35m" + "═" * 70 + "\033[0m")
+
+    results = []
+    passed = 0
+    failed = 0
+
+    def record(name: str, cmd_desc: str, ok: bool, detail: str = ""):
+        nonlocal passed, failed
+        _term_print(f"\033[1;36m  $ {cmd_desc}\033[0m")
+        if ok:
+            passed += 1
+            _term_print(f"\033[1;32m    ✓ PASS:\033[0m {name} {f'— {detail}' if detail else ''}")
+        else:
+            failed += 1
+            _term_print(f"\033[1;31m    ✗ FAIL:\033[0m {name} {f'— {detail}' if detail else ''}")
+        results.append({"name": name, "command": cmd_desc, "ok": ok, "detail": detail})
+
+    with app.test_client() as c:
+        # 1. Health
+        r = c.get("/health")
+        j = r.get_json(silent=True) or {}
+        record("Health check", "GET /health", r.status_code == 200 and j.get("ok") is True, f"HTTP {r.status_code}, version={j.get('version')}")
+
+        # 2. Version
+        r = c.get("/api/version")
+        j = r.get_json(silent=True) or {}
+        record("Version endpoint", "GET /api/version", r.status_code == 200 and "version_str" in j, f"HTTP {r.status_code}, {j.get('version_str')} (repo={j.get('auto_update_repo')})")
+
+        # 3. CI Reject: Broken Python
+        c.post("/api/self_update/chunk", json={"file": "app.py", "part": 1, "content": 'print("hello"'})
+        r = c.post("/api/self_update/assemble", json={"file": "app.py"})
+        j = r.get_json(silent=True) or {}
+        c.post("/api/self_update/discard", json={"file": "app.py"})
+        record("CI rejects broken Python", "POST /api/self_update/assemble (bad app.py)", r.status_code == 422 and j.get("ci_passed") is False, f"HTTP {r.status_code}, {len(j.get('ci_errors', []))} CI error(s)")
+
+        # 4. CI Reject: Truncated HTML
+        c.post("/api/self_update/chunk", json={"file": "index.html", "part": 1, "content": "<html><head></head><body><p>hi</p></body>"})
+        r = c.post("/api/self_update/assemble", json={"file": "index.html"})
+        j = r.get_json(silent=True) or {}
+        c.post("/api/self_update/discard", json={"file": "index.html"})
+        record("CI rejects truncated HTML", "POST /api/self_update/assemble (bad index.html)", r.status_code == 422 and j.get("ci_passed") is False, f"HTTP {r.status_code}, {len(j.get('ci_errors', []))} CI error(s)")
+
+        # 5. Allowlist enforcement
+        r = c.post("/api/self_update/chunk", json={"file": "evil.py", "part": 1, "content": "x=1"})
+        record("Self-update allowlist blocks evil.py", "POST /api/self_update/chunk (evil.py)", r.status_code == 403, f"HTTP {r.status_code}")
+
+        # 6. Staging status
+        r = c.get("/api/self_update/status")
+        j = r.get_json(silent=True) or {}
+        record("Self-update staging status", "GET /api/self_update/status", r.status_code == 200 and j.get("ok") is True, f"HTTP {r.status_code}, staged={len(j.get('staged', {}))}")
+
+        # 7. Chat persistence CRUD
+        tid = f"live-selftest-{int(time.time())}"
+        r_save = c.post("/api/chats/save", json={"id": tid, "title": "", "messages": [{"role": "user", "content": "Live self-test ping"}]})
+        r_get = c.get(f"/api/chats/{tid}")
+        j_get = (r_get.get_json(silent=True) or {}).get("chat", {})
+        r_ren = c.post("/api/chats/rename", json={"id": tid, "title": "Renamed Self-Test"})
+        r_get2 = c.get(f"/api/chats/{tid}")
+        j_get2 = (r_get2.get_json(silent=True) or {}).get("chat", {})
+        r_del = c.post("/api/chats/delete", json={"id": tid})
+        r_404 = c.get(f"/api/chats/{tid}")
+        crud_ok = (
+            r_save.status_code == 200
+            and j_get.get("title") == "Live self-test ping"
+            and r_ren.status_code == 200
+            and j_get2.get("title") == "Renamed Self-Test"
+            and r_del.status_code == 200
+            and r_404.status_code == 404
+        )
+        record("Chat persistence CRUD (save/auto-title/rename/delete)", "POST+GET /api/chats/*", crud_ok, f"auto-title='{j_get.get('title')}', delete→HTTP {r_404.status_code}")
+
+        # 8. Key pool endpoint
+        r = c.get("/api/keys")
+        record("Key pool status (masked)", "GET /api/keys", r.status_code == 200, f"HTTP {r.status_code}, keys={len(pool.keys)}")
+
+        # 9. Self-update identity awareness in system prompt
+        sp = build_queen_system_prompt()
+        sp_ok = "/api/self_update/chunk" in sp and "/api/self_update/assemble" in sp and AUTO_UPDATE_REPO in sp
+        record("Queen self-update awareness in system prompt", "build_queen_system_prompt()", sp_ok, f"len={len(sp)} chars, repo={AUTO_UPDATE_REPO}")
+
+    summary_color = "\033[1;32m" if failed == 0 else "\033[1;31m"
+    _term_print("\033[1;35m" + "─" * 70 + "\033[0m")
+    _term_print(f"{summary_color}  RESULT: {passed} passed, {failed} failed (total {len(results)})\033[0m")
+    _term_print("\033[1;35m" + "═" * 70 + "\033[0m")
+
+    payload = {
+        "ok": failed == 0,
+        "version": VERSION,
+        "timestamp": ts,
+        "passed": passed,
+        "failed": failed,
+        "results": results,
+    }
+    broadcast_event({"type": "live_selftest", **payload})
+    return payload
+
+
+@app.route("/api/test/live", methods=["GET", "POST"])
+def api_test_live():
+    """Run the visible live self-test suite, printing output in Queen's server window."""
+    return jsonify(run_live_selftest())
+
 @app.get("/api/models")
 def get_models():
     if not pool.keys:
@@ -1811,8 +1987,10 @@ def raw_keyboard_listener(server, url):
                 elif ch in ('r', 'R'):
                     pool.reset()
                     print("\r\n\033[1;32m[Reset] Key pool cooldowns cleared.\033[0m")
+                elif ch in ('t', 'T'):
+                    run_live_selftest()
                 elif ch in ('h', '?', '\r', '\n'):
-                    print("\r\n\033[1m[Controls]\033[0m \033[1;31m'q'\033[0m: quit | \033[1;36m'c'\033[0m: browser | \033[1;35m'g'\033[0m: github | \033[1;32m's'\033[0m: spend | \033[1;33m'r'\033[0m: reset")
+                    print("\r\n\033[1m[Controls]\033[0m \033[1;31m'q'\033[0m: quit | \033[1;36m'c'\033[0m: browser | \033[1;35m'g'\033[0m: github | \033[1;32m's'\033[0m: spend | \033[1;33m'r'\033[0m: reset | \033[1;35m't'\033[0m: live test")
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
@@ -1865,12 +2043,13 @@ def main():
     print(f"\033[1m  URL:\033[0m \033[4;34m{url}\033[0m (kicking in browser)")
     key_info = f"\033[1;32m{len(pool.keys)} key(s) in Key Manager\033[0m" if pool.keys else "\033[1;33mNo keys configured (click '📥 Import Keys')\033[0m"
     print(f"\033[1m  Key Manager:\033[0m {key_info}")
-    print(f"\033[1;35m  Back Door:\033[0m POST {url}/api/remote/send | POST {url}/api/keys/load-file")
+    print(f"\033[1;35m  Back Door:\033[0m POST {url}/api/remote/send | POST {url}/api/test/live | POST {url}/api/terminal/log")
     print(f"\033[1;33m  Raw keyboard controls in this terminal:\033[0m")
     print(f"    • Press \033[1;31m'q'\033[0m to quit the server cleanly")
     print(f"    • Press \033[1;36m'c'\033[0m to kick in browser with this page")
     print(f"    • Press \033[1;35m'g'\033[0m to inspect GitHub repositories")
     print(f"    • Press \033[1;32m's'\033[0m to show spend & billing stats")
+    print(f"    • Press \033[1;35m't'\033[0m to run the live visible self-test suite")
     print("\033[1;36m" + "=" * 74 + "\033[0m")
 
     try:

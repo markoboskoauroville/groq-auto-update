@@ -1,10 +1,10 @@
 # Groq AI Studio: takeover
 
 Repository: markoboskoauroville/groq_ai_studio (public, unpromoted: no README, no description; this file is the description).
-Status 11.11.2026: version v1 runs on this Mac, port 8765, `/health` answers `{"app":"groq-modern-chat","version":"v1","ok":true}`.
+Status 11.11.2026: version v2 runs on this Mac, port 8765, `/health` answers `{"app":"groq-modern-chat","version":"v2","ok":true}`.
 Marko, 11.11.2026: "We are developing this app now." Nothing is compiled: it is Python and one HTML file, so there is no
 GitHub Actions build; it runs from source.
-Auto-update repo: `markoboskoauroville/groq-auto-update` (private). CI-validated updates push here automatically.
+Auto-update repo: `markoboskoauroville/groq-auto-update` (public). CI-validated updates push here automatically.
 
 ## What it is
 A local chat studio for the Groq API in the browser, started from the terminal with the command `qwen`. A small Flask server
@@ -23,7 +23,7 @@ now; `05` to `07` were large self-contained installers, `09` just installs the d
 | `groq-chat` | same app, passes its arguments (the port) through. |
 | `groq-cli "question"` | one question in the terminal, streamed, with the key pool. `--status` lists the keys masked, `--reset` clears cooldowns. Default model there is `llama-3.3-70b-versatile` (`GROQ_MODEL` changes it). |
 Terminal keys while the server runs: `q` quit, `c` (or `o`) open the browser, `g` list 5 GitHub repos, `s` spend, `r` reset
-cooldowns, `h` help.
+cooldowns, `t` run live visible self-test suite, `h` help.
 
 ## Files
 | File | Job |
@@ -67,11 +67,12 @@ After a failure halfway through a reply the error is shown instead, so text is n
 - **Port**: starts at 8765 and takes the first free port up to 200 higher; writes it to `~/.groq/active_port` and the URL to `~/.groq/app_url`.
 
 ## HTTP API (127.0.0.1)
-`GET /` page, `/health`, `/api/models`, `/api/billing`, `/api/keys`, `/api/events` (server-sent events), `/api/session/messages`,
+`GET /` page, `/health`, `/api/version`, `/api/models`, `/api/billing`, `/api/keys`, `/api/events` (server-sent events), `/api/session/messages`,
 `/favicon.ico` (the orange Groq "thunderstrike" on dark); `POST /api/chat`, `/api/keys/import`, `/api/keys/upload`, `/api/keys/delete`
 (`id` or `index`), `/api/keys/clear`, `/api/reset-keys`, `/api/keys/load-file`, `/api/remote/send`
 (`{"prompt","mode","model","system_prompt"}`: a program types into the page; the open page sees it live over `/api/events` and the
-reply and telemetry come back in the response), `/api/github/*`.
+reply and telemetry come back in the response), `/api/chats/*` (server-side chat persistence + auto-title + rename + delete),
+`/api/self_update/*` (CI-gated chunked self-update + backup + git push to both repos), `GET/POST /api/test/live` (runs 9 live self-tests and prints colorized progress to Queen's terminal window), `POST /api/terminal/log` (prints live commands/banners to Queen's terminal console), `/api/github/*`.
 
 ## What has been checked, and what has not
 Checked 11.11.2026: the server is up and healthy, the keys file holds keys, the code was read through, and a three turn casual
@@ -93,4 +94,4 @@ session: a real answer from every model, failover with a truly exhausted key, th
 Marko's Groq model research (Groq has no image model, models researched for TTT) and scribe's Groq transcription use the same
 Groq keys (numbered keys in ~/Downloads/API/groq-api.txt). KeyringTester checks that these keys work and has read the image with
 `qwen/qwen3.8-27b` (14.10.2026). Work on this app: edit here in ~/Developer/groq_ai_studio, run `./install.sh`, restart `qwen`.
-Skill: `skills/groq-ai-studio/SKILL.md`.
+Skills (registered in `.agents/skills.json`): `skills/groq-ai-studio/SKILL.md` and `skills/groq-ai-studio-testing/SKILL.md` (visible macOS Terminal runner: `skills/groq-ai-studio-testing/scripts/run_visible_tests.sh`).
