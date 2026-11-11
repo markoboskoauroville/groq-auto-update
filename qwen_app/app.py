@@ -20,22 +20,35 @@ import queue
 import re
 import select
 import shutil
+import secrets
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 import warnings
 import webbrowser
 from pathlib import Path
 
 warnings.filterwarnings("ignore")
+# Import shared key pool from repo root first, else ~/.groq
 sys.path.insert(0, str(Path.home() / ".groq"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from flask import Flask, Response, jsonify, request  # noqa: E402
 from groq import APIError, AuthenticationError, Groq, PermissionDeniedError, RateLimitError  # noqa: E402
 from waitress.server import create_server  # noqa: E402
+from groq_pool import (  # noqa: E402
+    DEFAULT_RATE_COOLDOWN,
+    REJECTED_COOLDOWN,
+    ROTATE_ON,
+    DynamicKeyPool,
+    extract_keys_from_noise,
+)
 
 HOME = Path.home() / ".groq"
 KEYS_FILE = HOME / "keys.txt"
@@ -58,7 +71,38 @@ else:
         GIT_ROOT = _candidate_git_root              # fallback — git ops will fail gracefully
 UPDATE_DIR = HOME / "incoming_update"
 CHATS_DIR = HOME / "chats"
+API_TOKEN_FILE = HOME / "api_token"
 VERSION_FILE = GIT_ROOT / "version.json"
+
+# Local ecosystem endpoints (Star Menu, MANTRA_VOICE, Elevate Media)
+STAR_API_BASE = "http://127.0.0.1:8863"
+VOICE_API_BASE = "http://127.0.0.1:8837"
+STAR_CONFIG_DIR = Path.home() / ".config"
+ELEVATE_REPO_DIR = Path.home() / "ElevateMedia"
+ELEVATE_MONITOR_DIR = Path.home() / "Developer" / "ELEVATE_MEDIA_MONITOR"
+ELEVATE_SUPPORT_DIR = Path.home() / "Library" / "Application Support" / "ElevateMediaMonitor"
+ELEVATE_MOVIES_DIR = Path.home() / "Movies" / "ElevateMedia"
+
+
+def ensure_local_api_token() -> str:
+    """Create or load ~/.groq/api_token (0600, never logged or committed)."""
+    try:
+        HOME.mkdir(parents=True, exist_ok=True)
+        if API_TOKEN_FILE.exists():
+            tok = API_TOKEN_FILE.read_text(encoding="utf-8").strip()
+            if len(tok) >= 24:
+                return tok
+        tok = secrets.token_hex(24)
+        tmp = API_TOKEN_FILE.with_suffix(".tmp")
+        tmp.write_text(tok + "\n", encoding="utf-8")
+        os.chmod(tmp, 0o600)
+        tmp.replace(API_TOKEN_FILE)
+        return tok
+    except Exception:
+        return "local-queen-fallback-token"
+
+
+LOCAL_API_TOKEN = ensure_local_api_token()
 
 # ── Version Management ──────────────────────────────
 def load_app_version() -> int:
@@ -146,39 +190,53 @@ def find_first_available_port(preferred_port=DEFAULT_PORT, max_range=200):
         s.bind(('127.0.0.1', 0))
         return s.getsockname()[1]
 
-# Pricing per 1M tokens in USD
+# Pricing per 1M tokens in USD (official Groq API rates + live fallback)
 MODEL_PRICING = {
     "qwen/qwen3.8-27b": (0.80, 4.00),
     "qwen/qwen3.6-27b": (0.80, 4.00),
+    "qwen/qwen3-32b": (0.29, 0.59),
+    "qwen-qwq-32b": (0.29, 0.39),
     "openai/gpt-oss-120b": (0.15, 0.60),
     "openai/gpt-oss-20b": (0.075, 0.30),
+    "llama-3.3-70b-versatile": (0.59, 0.79),
+    "llama-3.1-8b-instant": (0.05, 0.08),
+    "meta-llama/llama-4-maverick-17b-128e-instruct": (0.20, 0.60),
+    "meta-llama/llama-4-scout-17b-16e-instruct": (0.11, 0.34),
+    "deepseek-r1-distill-llama-70b": (0.75, 0.99),
+    "moonshotai/kimi-k2-instruct": (1.00, 3.00),
+    "moonshotai/kimi-k2-instruct-0905": (1.00, 3.00),
+    "gemma2-9b-it": (0.20, 0.20),
     "allam-2-7b": (0.20, 0.20),
     "meta-llama/llama-prompt-guard-2-86m": (0.04, 0.04),
     "meta-llama/llama-prompt-guard-2-22m": (0.03, 0.03),
     "canopylabs/orpheus-v1-english": (0.20, 0.20),
-    "default": (0.50, 1.50)
+    "default": (0.50, 1.50),
 }
 
-ROTATE_ON = (RateLimitError, AuthenticationError, PermissionDeniedError)
-REJECTED_COOLDOWN = 30 * 24 * 3600
-DEFAULT_RATE_COOLDOWN = 60.0
+# Dynamic pricing cache populated if Groq API returns pricing metadata on /models
+LIVE_MODEL_PRICING: dict[str, tuple[float, float]] = {}
 
-def extract_keys_from_noise(text: str) -> list[str]:
-    """Parse noisy text, .env files, json, logs, bash exports, and extract clean Groq keys."""
-    if not text:
-        return []
-    matches = re.findall(r"gsk_[A-Za-z0-9_-]+", text)
-    valid_keys = []
-    for raw in matches:
-        clean = re.sub(r"[^A-Za-z0-9_-].*$", "", raw).rstrip("-_'\",.;:()[]{}")
-        if clean.startswith("gsk_") and len(clean) >= 20:
-            valid_keys.append(clean)
-    return list(dict.fromkeys(valid_keys))
+
+def get_model_rates(model: str) -> tuple[float, float]:
+    """Return (input_per_1m, output_per_1m) USD rates for a model."""
+    if model in LIVE_MODEL_PRICING:
+        return LIVE_MODEL_PRICING[model]
+    if model in MODEL_PRICING:
+        return MODEL_PRICING[model]
+    low = (model or "").lower()
+    if "8b" in low or "scout" in low:
+        return (0.08, 0.20)
+    if "70b" in low:
+        return (0.59, 0.79)
+    if "qwen3" in low and "32b" in low:
+        return (0.29, 0.59)
+    return MODEL_PRICING["default"]
+
 
 def build_queen_system_prompt(user_persona: str = "") -> str:
     """
-    Build Queen's always-on identity and self-update architecture prompt so the
-    model always knows who it is and how its CI-gated self-update pipeline works.
+    Build Queen's always-on identity, self-update, Star Menu, Voice Engine,
+    and Elevate Media architecture prompt.
     """
     base = (
         f"You are Queen (`qwen`), the AI assistant powering Marko's local Groq AI Studio "
@@ -193,18 +251,17 @@ def build_queen_system_prompt(user_persona: str = "") -> str:
         f"`{{\"file\": \"app.py\" or \"index.html\", \"part\": 1, \"content\": \"...\"}}`\n"
         f"   - Assemble & deploy: `POST http://127.0.0.1:8765/api/self_update/assemble` with "
         f"`{{\"file\": \"app.py\" or \"index.html\", \"commit_message\": \"...\"}}`\n"
-        f"2. CI Gate (`ci_run_all`): Automatically validates Python AST syntax, HTML tag balance, "
-        f"truncation, and file size (>=30% of existing file) BEFORE touching disk. Broken or truncated "
-        f"code is rejected with HTTP 422.\n"
-        f"3. Deploy & GitHub Sync: When CI passes, the pipeline backs up the old file, writes the new "
-        f"file to both `~/.groq/qwen_app/` and `~/Developer/groq_ai_studio/qwen_app/`, bumps `version.json` "
-        f"(shown in the green `{VERSION}` badge in the top-right corner), and commits + pushes to BOTH "
-        f"public GitHub repos: `markoboskoauroville/groq_ai_studio` and `{AUTO_UPDATE_REPO}`.\n"
-        f"4. GitHub Reader (`🐙` button in topbar): Can load and attach your own live files from "
-        f"`{AUTO_UPDATE_REPO}` or `markoboskoauroville/groq_ai_studio` into this chat so you can inspect "
-        f"and modify your own code.\n"
-        f"5. Live Visible Self-Test Backdoor: `POST http://127.0.0.1:8765/api/test/live` (or pressing `'t'` "
-        f"in the server terminal).\n"
+        f"2. CI Gate (`ci_run_all`): Validates Python AST syntax, HTML tag balance, truncation, "
+        f"and file size (>=30% of existing file) BEFORE touching disk (HTTP 422 on failure).\n"
+        f"3. Deploy & GitHub Sync: Backs up the old file, writes to `~/.groq/qwen_app/` and "
+        f"`~/Developer/groq_ai_studio/qwen_app/`, bumps `version.json` (`{VERSION}` badge), and pushes "
+        f"to BOTH `markoboskoauroville/groq_ai_studio` and `{AUTO_UPDATE_REPO}`.\n"
+        f"4. GitHub Reader (`🐙` button): Reads files from `{AUTO_UPDATE_REPO}` or any repo.\n"
+        f"5. Computer Control & Production Integrations built into Queen:\n"
+        f"   - Star Menu & Startup (`⭐` button / `/api/star/startup`, `/api/star/action` for open/quit/read/press/fn on all 55 Mantra apps via STAR_API :8863).\n"
+        f"   - Voice Engine & Subtitles (`🔊` button / `/api/voice/speak`, `/api/voice/speaking`, `/api/voice/pause`, `/api/voice/stop`, `/api/voice/hear` via MANTRA_VOICE :8837).\n"
+        f"   - Elevate Media Production (`🎬` button / `/api/elevate/board`, `/api/elevate/whatsapp`, `/api/elevate/whatsapp/draft`, `/api/elevate/drive-comments`, `/api/elevate/fetch-image`, `/api/elevate/gemini-chrome`, `/api/elevate/gemini-status`, `/api/elevate/resolve`).\n"
+        f"6. Live Visible Self-Test Backdoor: `POST http://127.0.0.1:8765/api/test/live` (or `'t'` in terminal).\n"
     )
     if user_persona:
         return f"{base}\nAdditional Persona / Instructions:\n{user_persona}"
@@ -231,193 +288,8 @@ def detect_code_intent(text: str) -> bool:
             return True
     return False
 
-class DynamicKeyPool:
-    def __init__(self):
-        self.keys = []
-        self.state = {"current": None, "cooldown": {}}
-        self.reload()
 
-    @staticmethod
-    def _id(key):
-        return hashlib.sha256(key.encode()).hexdigest()[:12]
-
-    @staticmethod
-    def _mask(key):
-        return f"{key[:6]}...{key[-4:]}" if len(key) >= 10 else key
-
-    def reload(self):
-        keys = []
-        if KEYS_FILE.exists():
-            try:
-                content = KEYS_FILE.read_text(encoding="utf-8")
-                keys = extract_keys_from_noise(content)
-            except Exception:
-                pass
-        self.keys = list(dict.fromkeys(keys))
-        self._load_state()
-
-    def save_keys(self):
-        try:
-            HOME.mkdir(parents=True, exist_ok=True)
-            tmp = KEYS_FILE.with_suffix(".tmp")
-            tmp.write_text("\n".join(self.keys) + "\n" if self.keys else "", encoding="utf-8")
-            os.chmod(tmp, 0o600)
-            tmp.replace(KEYS_FILE)
-        except Exception:
-            pass
-
-    def add_keys(self, new_keys: list[str]) -> tuple[int, int]:
-        before = len(self.keys)
-        valid_incoming = [k for k in new_keys if k.startswith("gsk_") and len(k) >= 20]
-        combined = list(dict.fromkeys(self.keys + valid_incoming))
-        self.keys = combined
-        self.save_keys()
-        self._load_state()
-        return len(self.keys) - before, len(self.keys)
-
-    def remove_key_by_id(self, key_id: str) -> bool:
-        target_idx = None
-        for idx, k in enumerate(self.keys):
-            if self._id(k) == key_id or self._mask(k) == key_id or k == key_id:
-                target_idx = idx
-                break
-        if target_idx is not None:
-            removed = self.keys.pop(target_idx)
-            kid = self._id(removed)
-            self.state.get("cooldown", {}).pop(f"{kid}:*", None)
-            for k in list(self.state.get("cooldown", {}).keys()):
-                if k.startswith(kid + ":"):
-                    self.state["cooldown"].pop(k, None)
-            if self.state.get("current") == kid:
-                self.state["current"] = self._id(self.keys[0]) if self.keys else None
-            self.save_keys()
-            self._save_state()
-            return True
-        return False
-
-    def remove_key_by_index(self, index: int) -> bool:
-        if 1 <= index <= len(self.keys):
-            return self.remove_key_by_id(self._id(self.keys[index - 1]))
-        return False
-
-    def clear(self):
-        self.keys = []
-        self.save_keys()
-        self.state = {"current": None, "cooldown": {}}
-        self._save_state()
-
-    def _load_state(self):
-        if STATE_FILE.exists():
-            try:
-                self.state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-            except Exception:
-                self.state = {"current": None, "cooldown": {}}
-        else:
-            self.state = {"current": None, "cooldown": {}}
-        valid_ids = [self._id(k) for k in self.keys]
-        if not self.keys:
-            self.state["current"] = None
-        elif self.state.get("current") not in valid_ids:
-            self.state["current"] = valid_ids[0]
-
-    def _save_state(self):
-        try:
-            tmp = STATE_FILE.with_suffix(".tmp")
-            tmp.write_text(json.dumps(self.state), encoding="utf-8")
-            os.chmod(tmp, 0o600)
-            tmp.replace(STATE_FILE)
-        except Exception:
-            pass
-
-    def _wait_for(self, key, model):
-        kid = self._id(key)
-        now = time.time()
-        cooldown = self.state.get("cooldown", {})
-        until = max(cooldown.get(f"{kid}:*", 0), cooldown.get(f"{kid}:{model}", 0))
-        return max(0.0, until - now)
-
-    def candidates(self, model):
-        if not self.keys:
-            return []
-        ids = [self._id(k) for k in self.keys]
-        curr = self.state.get("current")
-        start = ids.index(curr) if curr in ids else 0
-        ordered = self.keys[start:] + self.keys[:start]
-        ready = [k for k in ordered if self._wait_for(k, model) <= 0]
-        return ready if ready else ordered
-
-    def cool(self, key, model, exc):
-        kid = self._id(key)
-        if isinstance(exc, (AuthenticationError, PermissionDeniedError)):
-            scope, seconds = "*", REJECTED_COOLDOWN
-        else:
-            scope, seconds = model, DEFAULT_RATE_COOLDOWN
-            try:
-                seconds = float(exc.response.headers.get("retry-after"))
-            except Exception:
-                pass
-            seconds = max(seconds, 5.0)
-        self.state.setdefault("cooldown", {})[f"{kid}:{scope}"] = time.time() + seconds
-        other = [k for k in self.keys if k != key]
-        if other:
-            self.state["current"] = self._id(other[0])
-        self._save_state()
-
-    def good(self, key, model):
-        kid = self._id(key)
-        changed = self.state.get("current") != kid
-        self.state["current"] = kid
-        if self.state.setdefault("cooldown", {}).pop(f"{kid}:{model}", None) is not None:
-            changed = True
-        if changed:
-            self._save_state()
-
-    def reset(self):
-        self.state["cooldown"] = {}
-        if self.keys:
-            self.state["current"] = self._id(self.keys[0])
-        self._save_state()
-
-    def status_rich(self):
-        now = time.time()
-        items = []
-        curr = self.state.get("current")
-        for index, key in enumerate(self.keys, start=1):
-            kid = self._id(key)
-            is_active = (kid == curr)
-            cooldowns = []
-            for name, until in self.state.get("cooldown", {}).items():
-                if not name.startswith(kid + ":") or until <= now:
-                    continue
-                scope = name.split(":", 1)[1]
-                wait = int(until - now)
-                cooldowns.append({"scope": scope, "seconds_left": wait})
-
-            if cooldowns:
-                state_type = "cooling"
-                status_text = f"Cooling ({cooldowns[0]['scope']}, {cooldowns[0]['seconds_left']}s)"
-            elif is_active:
-                state_type = "active"
-                status_text = "Active (Primary)"
-            else:
-                state_type = "ready"
-                status_text = "Ready (Failover Pool)"
-
-            items.append({
-                "index": index,
-                "id": kid,
-                "masked": self._mask(key),
-                "status": status_text,
-                "state_type": state_type,
-                "is_active": is_active,
-                "cooldowns": cooldowns
-            })
-        return items
-
-    def status_legacy(self):
-        return [(item["index"], item["masked"], item["status"]) for item in self.status_rich()]
-
-pool = DynamicKeyPool()
+pool = DynamicKeyPool(quiet=True, include_env=True)
 
 active_messages = []
 event_subscribers = []
@@ -435,7 +307,7 @@ def broadcast_event(data):
             event_subscribers.remove(q)
 
 def calculate_cost(model, prompt_tokens, completion_tokens):
-    rates = MODEL_PRICING.get(model, MODEL_PRICING["default"])
+    rates = get_model_rates(model)
     p_cost = (prompt_tokens * rates[0]) / 1_000_000.0
     c_cost = (completion_tokens * rates[1]) / 1_000_000.0
     return {
@@ -445,6 +317,21 @@ def calculate_cost(model, prompt_tokens, completion_tokens):
         "rate_in": rates[0],
         "rate_out": rates[1]
     }
+
+def _extract_chunk_usage(chunk):
+    """Extract usage from Groq stream chunk (`chunk.usage` or `chunk.x_groq.usage`)."""
+    usage = getattr(chunk, "usage", None)
+    if not usage:
+        xg = getattr(chunk, "x_groq", None)
+        if xg:
+            usage = getattr(xg, "usage", None)
+    if not usage:
+        return 0, 0, 0
+    pt = int(getattr(usage, "prompt_tokens", 0) or 0)
+    ct = int(getattr(usage, "completion_tokens", 0) or 0)
+    details = getattr(usage, "completion_tokens_details", None)
+    rt = int(getattr(details, "reasoning_tokens", 0) or 0) if details else 0
+    return pt, ct, rt
 
 def load_ledger():
     if LEDGER_FILE.exists():
@@ -495,6 +382,50 @@ def record_spend(model, prompt_tokens, completion_tokens, req_id=""):
     return cost_info, ledger
 
 app = Flask(__name__)
+
+
+def _is_trusted_local_origin(hdr_url: str) -> bool:
+    """Return True if Origin/Referer points to 127.0.0.1 or localhost."""
+    try:
+        parsed = urllib.parse.urlparse(hdr_url)
+        return parsed.scheme in ("http", "https") and parsed.hostname in ("127.0.0.1", "localhost")
+    except Exception:
+        return False
+
+
+@app.before_request
+def local_api_security_guard():
+    """
+    Protect local `/api/*` endpoints from cross-origin browser CSRF attacks
+    (TAKEOVER, Dangers) while keeping local CLI/curl and Queen's own UI seamless.
+    """
+    if not request.path.startswith("/api/"):
+        return None
+    if request.method == "OPTIONS":
+        return jsonify(ok=False, error="Cross-origin preflight rejected"), 403
+
+    # Explicit local API token always grants access
+    sent_token = (request.headers.get("X-Queen-Token") or "").strip()
+    if sent_token and secrets.compare_digest(sent_token, LOCAL_API_TOKEN):
+        return None
+
+    # Block cross-site browser requests reported via Fetch Metadata
+    sec_site = (request.headers.get("Sec-Fetch-Site") or "").lower()
+    if sec_site == "cross-site":
+        return jsonify(ok=False, error="Blocked cross-site browser request to local Queen API"), 403
+
+    # Block any Origin header that is not 127.0.0.1 / localhost
+    origin = (request.headers.get("Origin") or "").strip()
+    if origin:
+        if origin == "null" or not _is_trusted_local_origin(origin):
+            return jsonify(ok=False, error=f"Untrusted Origin '{origin}' blocked by Queen security guard"), 403
+
+    # Block any Referer header that is not 127.0.0.1 / localhost
+    referer = (request.headers.get("Referer") or "").strip()
+    if referer and not _is_trusted_local_origin(referer):
+        return jsonify(ok=False, error="Untrusted Referer blocked by Queen security guard"), 403
+
+    return None
 
 # --- Groq Thunderstrike Favicon Route ---
 @app.get("/favicon.ico")
@@ -606,6 +537,7 @@ def remote_send():
     reasoning = []
     prompt_tokens = 0
     completion_tokens = 0
+    reasoning_tokens = 0
     req_id = ""
     served_key = None
     failovers = 0
@@ -632,10 +564,13 @@ def remote_send():
                         raw_text.append(d.content)
                         broadcast_event({"type": "stream_chunk", "token": d.content})
 
-                usage = getattr(chunk, "usage", None)
-                if usage:
-                    prompt_tokens = getattr(usage, "prompt_tokens", 0) or prompt_tokens
-                    completion_tokens = getattr(usage, "completion_tokens", 0) or completion_tokens
+                pt, ct, rt = _extract_chunk_usage(chunk)
+                if pt:
+                    prompt_tokens = pt
+                if ct:
+                    completion_tokens = ct
+                if rt:
+                    reasoning_tokens = rt
 
                 x_groq = getattr(chunk, "x_groq", None)
                 if x_groq and getattr(x_groq, "id", None):
@@ -656,11 +591,13 @@ def remote_send():
 
     full_reply = "".join(raw_text)
     full_reason = "".join(reasoning)
+    if not reasoning_tokens and full_reason:
+        reasoning_tokens = max(1, int(len(full_reason) / 4))
     elapsed = time.time() - start_time
     total_tokens = prompt_tokens + completion_tokens
     if total_tokens == 0:
-        total_tokens = int(len(full_reply) / 3.8) + 10
-        prompt_tokens = max(5, total_tokens - len(full_reply) // 4)
+        total_tokens = int((len(full_reply) + len(full_reason)) / 3.8) + 10
+        prompt_tokens = max(5, total_tokens - (len(full_reply) + len(full_reason)) // 4)
         completion_tokens = max(1, total_tokens - prompt_tokens)
 
     cost_info, ledger = record_spend(model, prompt_tokens, completion_tokens, req_id)
@@ -669,6 +606,8 @@ def remote_send():
     telemetry = {
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
+        "reasoning_tokens": reasoning_tokens,
+        "answer_tokens": max(0, completion_tokens - reasoning_tokens),
         "total_tokens": total_tokens,
         "cost": cost_info["total_cost"],
         "prompt_cost": cost_info["prompt_cost"],
@@ -757,6 +696,7 @@ def chat():
         full_reasoning = []
         prompt_tokens = 0
         completion_tokens = 0
+        reasoning_tokens = 0
         req_id = ""
         served_key = None
         failovers = 0
@@ -787,10 +727,13 @@ def chat():
                             full_content.append(c_token)
                             yield json.dumps({"t": c_token}) + "\n"
 
-                    usage = getattr(chunk, "usage", None)
-                    if usage:
-                        prompt_tokens = getattr(usage, "prompt_tokens", 0) or prompt_tokens
-                        completion_tokens = getattr(usage, "completion_tokens", 0) or completion_tokens
+                    pt, ct, rt = _extract_chunk_usage(chunk)
+                    if pt:
+                        prompt_tokens = pt
+                    if ct:
+                        completion_tokens = ct
+                    if rt:
+                        reasoning_tokens = rt
 
                     x_groq = getattr(chunk, "x_groq", None)
                     if x_groq and getattr(x_groq, "id", None):
@@ -811,11 +754,15 @@ def chat():
                 yield json.dumps({"error": str(exc)}) + "\n"
                 return
 
+        joined_content = "".join(full_content)
+        joined_reasoning = "".join(full_reasoning)
+        if not reasoning_tokens and joined_reasoning:
+            reasoning_tokens = max(1, int(len(joined_reasoning) / 4))
         elapsed = time.time() - start_time
         total_tokens = prompt_tokens + completion_tokens
         if total_tokens == 0:
-            total_tokens = int(len("".join(full_content)) / 3.8) + 10
-            prompt_tokens = max(5, total_tokens - len("".join(full_content)) // 4)
+            total_tokens = int((len(joined_content) + len(joined_reasoning)) / 3.8) + 10
+            prompt_tokens = max(5, total_tokens - (len(joined_content) + len(joined_reasoning)) // 4)
             completion_tokens = max(1, total_tokens - prompt_tokens)
 
         cost_info, ledger = record_spend(model, prompt_tokens, completion_tokens, req_id)
@@ -824,6 +771,8 @@ def chat():
         telemetry = {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
+            "reasoning_tokens": reasoning_tokens,
+            "answer_tokens": max(0, completion_tokens - reasoning_tokens),
             "total_tokens": total_tokens,
             "cost": cost_info["total_cost"],
             "prompt_cost": cost_info["prompt_cost"],
@@ -1717,8 +1666,579 @@ def github_read_url():
 @app.get("/")
 def index():
     page = Path(__file__).with_name("index.html").read_text(encoding="utf-8")
-    page = page.replace("__DEFAULT_MODEL__", DEFAULT_MODEL).replace("__VERSION__", VERSION)
+    page = (
+        page.replace("__DEFAULT_MODEL__", DEFAULT_MODEL)
+        .replace("__VERSION__", VERSION)
+        .replace("__API_TOKEN__", LOCAL_API_TOKEN)
+    )
     return Response(page, mimetype="text/html", headers={"Cache-Control": "no-store"})
+
+
+# ─────────────── STAR MENU & STARTUP PROXY (/api/star/*) ───────────────
+
+def _http_json(url: str, method: str = "GET", payload: dict | None = None, timeout: float = 8.0, raw_body: bytes | None = None, content_type: str = "application/json") -> tuple[bool, int, dict]:
+    """Helper to call local HTTP JSON services (STAR_API :8863, MANTRA_VOICE :8837)."""
+    try:
+        headers = {"Accept": "application/json"}
+        body = None
+        if raw_body is not None:
+            body = raw_body
+            headers["Content-Type"] = content_type
+        elif payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        elif method == "POST":
+            body = b"{}"
+            headers["Content-Type"] = "application/json"
+
+        req = urllib.request.Request(url, data=body, headers=headers, method=method)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            try:
+                return True, resp.status, json.loads(raw) if raw.strip() else {}
+            except Exception:
+                return True, resp.status, {"raw": raw}
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace") if exc.fp else str(exc)
+        try:
+            err_json = json.loads(raw)
+        except Exception:
+            err_json = {"error": raw or str(exc)}
+        return False, exc.code, err_json
+    except Exception as exc:
+        return False, 502, {"error": str(exc)}
+
+
+def _read_json_safe(path: Path, default):
+    try:
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+
+@app.get("/api/star/startup")
+def star_startup():
+    """
+    Return Startup config (star-autostart.json), running keys (star-running.json),
+    all 11 folders & rows (star-rows.json), and live status from STAR_API (:8863).
+    """
+    autostart = _read_json_safe(STAR_CONFIG_DIR / "star-autostart.json", {"always": [], "never": []})
+    running = _read_json_safe(STAR_CONFIG_DIR / "star-running.json", [])
+    rows_doc = _read_json_safe(STAR_CONFIG_DIR / "star-rows.json", {"folders": [], "rows": []})
+
+    ok_apps, _, live_apps_res = _http_json(f"{STAR_API_BASE}/apps", timeout=3.0)
+    ok_fn, _, live_fn_res = _http_json(f"{STAR_API_BASE}/fn", timeout=3.0)
+
+    return jsonify(
+        ok=True,
+        star_api_online=ok_apps,
+        autostart=autostart,
+        running_keys=running,
+        folders=rows_doc.get("folders", []),
+        rows=rows_doc.get("rows", []),
+        live_apps=live_apps_res.get("apps", []) if ok_apps else [],
+        registered_functions=live_fn_res.get("apps", []) if ok_fn else [],
+    )
+
+
+@app.post("/api/star/action")
+def star_action():
+    """
+    Proxy actions to STAR_API (127.0.0.1:8863):
+    JSON Body: {
+      "app": "Timer Stopwatch Clock",
+      "action": "open | quit | read | press | fn",
+      "label": "stopwatch",
+      "fn": "record.status",
+      "args": {}
+    }
+    """
+    data = request.get_json(silent=True) or {}
+    app_name = (data.get("app") or "").strip()
+    action = (data.get("action") or "").strip().lower()
+
+    if not app_name:
+        return jsonify(ok=False, error="Missing 'app' name"), 400
+    if action not in ("open", "quit", "read", "press", "fn"):
+        return jsonify(ok=False, error="Invalid 'action'. Must be one of: open, quit, read, press, fn"), 400
+
+    enc_app = urllib.parse.quote(app_name, safe="")
+    if action == "read":
+        ok, code, res = _http_json(f"{STAR_API_BASE}/apps/{enc_app}", method="GET", timeout=8.0)
+    elif action in ("open", "quit"):
+        ok, code, res = _http_json(f"{STAR_API_BASE}/apps/{enc_app}/{action}", method="POST", payload={}, timeout=8.0)
+    elif action == "press":
+        label = (data.get("label") or "").strip()
+        if not label:
+            return jsonify(ok=False, error="Missing 'label' for action='press'"), 400
+        ok, code, res = _http_json(
+            f"{STAR_API_BASE}/apps/{enc_app}/press",
+            method="POST",
+            payload={"label": label},
+            timeout=8.0,
+        )
+    else:  # fn
+        fn_name = (data.get("fn") or "").strip()
+        if not fn_name:
+            return jsonify(ok=False, error="Missing 'fn' name for action='fn'"), 400
+        enc_fn = urllib.parse.quote(fn_name, safe="")
+        fn_args = data.get("args") if isinstance(data.get("args"), dict) else {}
+        ok, code, res = _http_json(
+            f"{STAR_API_BASE}/apps/{enc_app}/fn/{enc_fn}",
+            method="POST",
+            payload=fn_args,
+            timeout=12.0,
+        )
+
+    return jsonify(ok=ok, app=app_name, action=action, result=res), (200 if ok else code)
+
+
+# ─────────────── VOICE ENGINE & SUBTITLES PROXY (/api/voice/*) ───────────────
+
+@app.get("/api/voice/speaking")
+def voice_speaking():
+    """Return live playback & word-timing highlight status from MANTRA_VOICE (:8837/speaking)."""
+    ok, code, res = _http_json(f"{VOICE_API_BASE}/speaking", method="GET", timeout=3.0)
+    if not ok:
+        return jsonify(ok=False, voice_online=False, on=False, error=res.get("error", "Voice engine offline")), 200
+    return jsonify(ok=True, voice_online=True, **res)
+
+
+@app.get("/api/voice/voices")
+def voice_list_voices():
+    """List available voices and current voice settings from MANTRA_VOICE (:8837/voices)."""
+    ok, code, res = _http_json(f"{VOICE_API_BASE}/voices", method="GET", timeout=4.0)
+    return jsonify(ok=ok, **res), (200 if ok else code)
+
+
+@app.post("/api/voice/speak")
+def voice_speak():
+    """Speak text aloud with on-screen film subtitles via MANTRA_VOICE (:8837/speak)."""
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify(ok=False, error="Missing 'text' to speak"), 400
+    payload = {"text": text}
+    for opt in ("voice", "engine", "wait"):
+        if opt in data:
+            payload[opt] = data[opt]
+    ok, code, res = _http_json(f"{VOICE_API_BASE}/speak", method="POST", payload=payload, timeout=20.0)
+    return jsonify(ok=ok, **res), (200 if ok else code)
+
+
+@app.post("/api/voice/pause")
+def voice_pause():
+    """Toggle pause/resume on MANTRA_VOICE (:8837/speak/pause)."""
+    ok, code, res = _http_json(f"{VOICE_API_BASE}/speak/pause", method="POST", payload={}, timeout=4.0)
+    return jsonify(ok=ok, **res), (200 if ok else code)
+
+
+@app.post("/api/voice/stop")
+def voice_stop():
+    """Stop active speech & clear subtitles on MANTRA_VOICE (:8837/speak/stop)."""
+    ok, code, res = _http_json(f"{VOICE_API_BASE}/speak/stop", method="POST", payload={}, timeout=4.0)
+    return jsonify(ok=ok, **res), (200 if ok else code)
+
+
+@app.post("/api/voice/hear")
+def voice_hear():
+    """Speech-to-text via local Whisper MLX GPU (:8837/hear)."""
+    lang = request.args.get("lang", "auto")
+    words = request.args.get("words", "1")
+    qs = urllib.parse.urlencode({"lang": lang, "words": words})
+    ct = request.headers.get("Content-Type", "application/json")
+    if "application/json" in ct:
+        data = request.get_json(silent=True) or {}
+        ok, code, res = _http_json(f"{VOICE_API_BASE}/hear?{qs}", method="POST", payload=data, timeout=60.0)
+    else:
+        raw = request.get_data()
+        ok, code, res = _http_json(f"{VOICE_API_BASE}/hear?{qs}", method="POST", raw_body=raw, content_type=ct, timeout=60.0)
+    return jsonify(ok=ok, **res), (200 if ok else code)
+
+
+# ─────────────── ELEVATE MEDIA PRODUCTION (/api/elevate/*) ───────────────
+
+ELEVATE_ALLOWED_RESOLVE_TOOLS = {
+    "layout_check.py",
+    "resolve_checklist.py",
+    "resolve_fades.py",
+    "caption_check.py",
+    "centre_verify.py",
+    "centre_blocks.py",
+    "overlap_check.py",
+    "clip_audio_check.py",
+    "delivery_check.py",
+    "resolve_to_4x5.py",
+}
+
+
+def _safe_project_code(raw: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_-]", "", (raw or "").strip())
+
+
+@app.get("/api/elevate/board")
+def elevate_board():
+    """Return Project Watcher board (watcher.json: HIR_xx projects, stages, next steps)."""
+    watcher_path = ELEVATE_SUPPORT_DIR / "watcher.json"
+    data = _read_json_safe(watcher_path, {"projects": []})
+    return jsonify(
+        ok=True,
+        exists=watcher_path.exists(),
+        path=str(watcher_path),
+        projects=data.get("projects", []) if isinstance(data, dict) else [],
+        board=data,
+    )
+
+
+@app.get("/api/elevate/whatsapp")
+def elevate_whatsapp():
+    """Return latest messages from WhatsApp group 'AI Videos' (messages.jsonl)."""
+    try:
+        count = max(1, min(200, int(request.args.get("count", "30"))))
+    except ValueError:
+        count = 30
+    chat_filter = (request.args.get("chat") or "AI Videos").strip()
+
+    jsonl_path = ELEVATE_SUPPORT_DIR / "messages.jsonl"
+    fallback_jsonl = ELEVATE_REPO_DIR / "production" / "damjan" / "chat" / "ai_videos.jsonl"
+    src = jsonl_path if jsonl_path.exists() else fallback_jsonl
+
+    messages = []
+    if src.exists():
+        try:
+            lines = src.read_text(encoding="utf-8", errors="replace").splitlines()
+            for ln in lines:
+                ln = ln.strip()
+                if not ln:
+                    continue
+                try:
+                    item = json.loads(ln)
+                    if not chat_filter or item.get("chat") == chat_filter:
+                        messages.append(item)
+                except Exception:
+                    continue
+        except Exception as exc:
+            return jsonify(ok=False, error=str(exc)), 500
+
+    recent = messages[-count:]
+    return jsonify(
+        ok=True,
+        source=str(src),
+        chat=chat_filter,
+        count=len(recent),
+        total_available=len(messages),
+        messages=recent,
+    )
+
+
+@app.post("/api/elevate/whatsapp/draft")
+def elevate_whatsapp_draft():
+    """
+    Type an UNSENT draft reply into WhatsApp Web via whatsapp_draft.py.
+    HUMAN GATE: Never presses Send — Marko reviews and sends himself.
+    """
+    data = request.get_json(silent=True) or {}
+    chat_name = (data.get("chat") or "AI Videos").strip()
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify(ok=False, error="Missing 'text' for WhatsApp draft"), 400
+
+    script = ELEVATE_REPO_DIR / "tools" / "whatsapp_draft.py"
+    if not script.exists():
+        return jsonify(ok=False, error=f"Script not found: {script}"), 404
+
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", encoding="utf-8", delete=False) as tf:
+        tf.write(text)
+        tmp_path = tf.name
+
+    try:
+        res = subprocess.run(
+            ["python3", str(script), chat_name, tmp_path],
+            capture_output=True,
+            text=True,
+            timeout=25,
+        )
+        ok = res.returncode == 0
+        return jsonify(
+            ok=ok,
+            unsent_human_gated=True,
+            chat=chat_name,
+            stdout=res.stdout.strip(),
+            stderr=res.stderr.strip(),
+            error=None if ok else (res.stderr.strip() or res.stdout.strip() or "whatsapp_draft.py failed"),
+        ), (200 if ok else 409)
+    except Exception as exc:
+        return jsonify(ok=False, error=str(exc)), 500
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+@app.get("/api/elevate/drive-comments")
+def elevate_drive_comments():
+    """Read timestamped video revision comments on Google Drive (LongevityStore) via drive_comments.py."""
+    project = _safe_project_code(request.args.get("project", ""))
+    include_all = request.args.get("all", "0") in ("1", "true", "yes")
+    if not project:
+        return jsonify(ok=False, error="Query param 'project' (e.g. HIR_98) is required"), 400
+
+    gdrive_py = Path.home() / "Applications" / "GDriveDownloader" / ".venv" / "bin" / "python"
+    py_bin = str(gdrive_py) if gdrive_py.exists() else "python3"
+    script = ELEVATE_MONITOR_DIR / "tools" / "drive_comments.py"
+    if not script.exists():
+        return jsonify(ok=False, error=f"Script not found: {script}"), 404
+
+    cmd = [py_bin, "-I", str(script), project] if gdrive_py.exists() else [py_bin, str(script), project]
+    if include_all:
+        cmd.append("--all")
+
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
+        if res.returncode != 0:
+            return jsonify(ok=False, project=project, error=(res.stderr or res.stdout).strip()), 502
+        parsed = json.loads(res.stdout) if res.stdout.strip() else {}
+        return jsonify(ok=True, **parsed)
+    except Exception as exc:
+        return jsonify(ok=False, project=project, error=str(exc)), 500
+
+
+@app.post("/api/elevate/fetch-image")
+def elevate_fetch_image():
+    """
+    Download a high-resolution product photo into ~/Movies/ElevateMedia/<project>/refs/web/,
+    verify image MIME type, and inspect pixel dimensions via macOS `sips`.
+    """
+    data = request.get_json(silent=True) or {}
+    url = (data.get("url") or "").strip()
+    project = _safe_project_code(data.get("project", ""))
+    name = re.sub(r"[^A-Za-z0-9_.-]", "_", (data.get("name") or "product_ref").strip())
+
+    if not url or not url.startswith(("http://", "https://")):
+        return jsonify(ok=False, error="Valid http(s) 'url' is required"), 400
+    if not project:
+        return jsonify(ok=False, error="'project' (e.g. HIR_98) is required"), 400
+
+    # Resolve matching project folder under ~/Movies/ElevateMedia if one starts with HIR_xx
+    target_project_dir = ELEVATE_MOVIES_DIR / project
+    if ELEVATE_MOVIES_DIR.is_dir() and not target_project_dir.exists():
+        matches = sorted(ELEVATE_MOVIES_DIR.glob(f"{project}*"))
+        if matches:
+            target_project_dir = matches[0]
+
+    refs_dir = target_project_dir / "refs" / "web"
+    refs_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; GroqAIStudio)"})
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            ctype = (resp.headers.get("Content-Type") or "").lower()
+            if not ctype.startswith("image/"):
+                return jsonify(ok=False, error=f"URL did not return an image (Content-Type: {ctype})"), 415
+            img_bytes = resp.read()
+    except Exception as exc:
+        return jsonify(ok=False, error=f"Download failed: {exc}"), 502
+
+    ext_map = {"image/png": ".png", "image/webp": ".webp", "image/jpeg": ".jpg", "image/jpg": ".jpg"}
+    ext = ext_map.get(ctype.split(";")[0].strip(), ".png")
+    if not os.path.splitext(name)[1]:
+        name = f"{name}{ext}"
+
+    out_path = refs_dir / name
+    out_path.write_bytes(img_bytes)
+
+    width, height = 0, 0
+    try:
+        sips = subprocess.run(
+            ["sips", "-g", "pixelWidth", "-g", "pixelHeight", str(out_path)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        m_w = re.search(r"pixelWidth:\s*(\d+)", sips.stdout)
+        m_h = re.search(r"pixelHeight:\s*(\d+)", sips.stdout)
+        if m_w:
+            width = int(m_w.group(1))
+        if m_h:
+            height = int(m_h.group(1))
+    except Exception:
+        pass
+
+    return jsonify(
+        ok=True,
+        project=project,
+        path=str(out_path),
+        content_type=ctype,
+        bytes=len(img_bytes),
+        width=width,
+        height=height,
+        high_res=(max(width, height) >= 1000),
+    )
+
+
+@app.post("/api/elevate/gemini-chrome")
+def elevate_gemini_chrome():
+    """
+    Free image generation workflow via Gemini in Chrome:
+    - mode='chrome': copies prompt to clipboard and opens https://gemini.google.com/app in Google Chrome
+    - mode='vm': stages batch.json + optional refs to gdrive:Chromium Downloads/Gemini/_batch/batch.json via rclone
+    """
+    data = request.get_json(silent=True) or {}
+    prompt = (data.get("prompt") or "").strip()
+    project = _safe_project_code(data.get("project") or "HIR_GEN")
+    shot_name = re.sub(r"[^A-Za-z0-9_.-]", "_", (data.get("name") or "shot_01").strip())
+    mode = (data.get("mode") or "chrome").strip().lower()
+    refs = data.get("refs") if isinstance(data.get("refs"), list) else []
+
+    if not prompt:
+        return jsonify(ok=False, error="Missing 'prompt'"), 400
+    if mode not in ("chrome", "vm"):
+        return jsonify(ok=False, error="Invalid 'mode': must be 'chrome' or 'vm'"), 400
+
+    if mode == "chrome":
+        try:
+            subprocess.run(["pbcopy"], input=prompt, text=True, timeout=5)
+            subprocess.run(["open", "-a", "Google Chrome", "https://gemini.google.com/app"], timeout=8)
+            return jsonify(
+                ok=True,
+                mode="chrome",
+                project=project,
+                name=shot_name,
+                clipboard_copied=True,
+                opened_url="https://gemini.google.com/app",
+                message="Prompt copied to clipboard and Google Chrome opened to Gemini.",
+            )
+        except Exception as exc:
+            return jsonify(ok=False, error=str(exc)), 500
+
+    # mode == "vm" -> upload batch.json via rclone
+    rclone_bin = shutil.which("rclone") or "/opt/homebrew/bin/rclone"
+    if not Path(rclone_bin).exists():
+        return jsonify(ok=False, error="rclone binary not found"), 500
+
+    uploaded_refs = []
+    remote_base = f"gdrive:Chromium Downloads/Gemini/em-{project}"
+    for r_path in refs:
+        p = Path(os.path.expanduser(str(r_path)))
+        if p.exists():
+            res_ref = subprocess.run(
+                [rclone_bin, "copy", str(p), f"{remote_base}/refs/"],
+                capture_output=True,
+                text=True,
+                timeout=45,
+            )
+            if res_ref.returncode == 0:
+                uploaded_refs.append(p.name)
+
+    batch_payload = {
+        "project": f"em-{project}",
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "output_dir": f"{remote_base}/",
+        "items": [
+            {
+                "name": shot_name,
+                "prompt": prompt,
+                "refs": uploaded_refs,
+            }
+        ],
+    }
+    with tempfile.NamedTemporaryFile("w", suffix=".json", encoding="utf-8", delete=False) as tf:
+        json.dump(batch_payload, tf, indent=2)
+        tmp_batch = tf.name
+
+    try:
+        res = subprocess.run(
+            [rclone_bin, "copyto", tmp_batch, "gdrive:Chromium Downloads/Gemini/_batch/batch.json"],
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+        ok = res.returncode == 0
+        return jsonify(
+            ok=ok,
+            mode="vm",
+            project=project,
+            name=shot_name,
+            uploaded_refs=uploaded_refs,
+            remote_output=remote_base,
+            error=None if ok else (res.stderr or res.stdout).strip(),
+        ), (200 if ok else 502)
+    finally:
+        try:
+            os.unlink(tmp_batch)
+        except OSError:
+            pass
+
+
+@app.get("/api/elevate/gemini-status")
+def elevate_gemini_status():
+    """Check completed Gemini VM images in gdrive:Chromium Downloads/Gemini/em-<project>/."""
+    project = _safe_project_code(request.args.get("project", ""))
+    if not project:
+        return jsonify(ok=False, error="Query param 'project' is required"), 400
+
+    rclone_bin = shutil.which("rclone") or "/opt/homebrew/bin/rclone"
+    if not Path(rclone_bin).exists():
+        return jsonify(ok=False, error="rclone binary not found"), 500
+
+    remote_dir = f"gdrive:Chromium Downloads/Gemini/em-{project}"
+    try:
+        res = subprocess.run(
+            [rclone_bin, "lsjson", remote_dir],
+            capture_output=True,
+            text=True,
+            timeout=25,
+        )
+        if res.returncode != 0:
+            return jsonify(ok=True, project=project, remote=remote_dir, files=[], note="Folder not created yet or empty")
+        files = json.loads(res.stdout) if res.stdout.strip() else []
+        return jsonify(ok=True, project=project, remote=remote_dir, count=len(files), files=files)
+    except Exception as exc:
+        return jsonify(ok=False, project=project, error=str(exc)), 500
+
+
+@app.post("/api/elevate/resolve")
+def elevate_resolve_tool():
+    """
+    Run an allowlisted Elevate Media DaVinci Resolve verification/layout tool.
+    JSON Body: { "tool": "layout_check.py", "args": [], "use_resolve_run": false }
+    """
+    data = request.get_json(silent=True) or {}
+    tool_name = (data.get("tool") or "").strip()
+    extra_args = [str(a) for a in (data.get("args") or []) if isinstance(a, (str, int, float))]
+
+    if tool_name not in ELEVATE_ALLOWED_RESOLVE_TOOLS:
+        return jsonify(
+            ok=False,
+            error=f"Tool '{tool_name}' is not in the safe Elevate Resolve allowlist: {sorted(ELEVATE_ALLOWED_RESOLVE_TOOLS)}",
+        ), 403
+
+    tool_path = ELEVATE_REPO_DIR / "tools" / tool_name
+    if not tool_path.exists():
+        return jsonify(ok=False, error=f"Tool script not found on disk: {tool_path}"), 404
+
+    resolve_run_bin = Path.home() / ".local" / "bin" / "resolve-run"
+    needs_router = bool(data.get("use_resolve_run")) or tool_name.startswith("resolve_")
+    if needs_router and resolve_run_bin.exists():
+        cmd = [str(resolve_run_bin), "--who", "elevate", str(tool_path)] + extra_args
+    else:
+        cmd = ["python3", str(tool_path)] + extra_args
+
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+        return jsonify(
+            ok=(res.returncode == 0),
+            tool=tool_name,
+            command=cmd,
+            returncode=res.returncode,
+            stdout=res.stdout[-4000:],
+            stderr=res.stderr[-4000:],
+        ), (200 if res.returncode == 0 else 422)
+    except Exception as exc:
+        return jsonify(ok=False, tool=tool_name, error=str(exc)), 500
 
 @app.get("/api/version")
 def get_version():
@@ -1856,10 +2376,50 @@ def run_live_selftest() -> dict:
         r = c.get("/api/keys")
         record("Key pool status (masked)", "GET /api/keys", r.status_code == 200, f"HTTP {r.status_code}, keys={len(pool.keys)}")
 
-        # 9. Self-update identity awareness in system prompt
+        # 9. Self-update + computer control identity awareness in system prompt
         sp = build_queen_system_prompt()
-        sp_ok = "/api/self_update/chunk" in sp and "/api/self_update/assemble" in sp and AUTO_UPDATE_REPO in sp
-        record("Queen self-update awareness in system prompt", "build_queen_system_prompt()", sp_ok, f"len={len(sp)} chars, repo={AUTO_UPDATE_REPO}")
+        sp_ok = (
+            "/api/self_update/chunk" in sp
+            and "/api/self_update/assemble" in sp
+            and "/api/star/startup" in sp
+            and "/api/voice/speak" in sp
+            and "/api/elevate/board" in sp
+            and AUTO_UPDATE_REPO in sp
+        )
+        record("Queen self-update & ecosystem awareness in system prompt", "build_queen_system_prompt()", sp_ok, f"len={len(sp)} chars, repo={AUTO_UPDATE_REPO}")
+
+        # 10. Local API security guard (blocks cross-origin CSRF, allows X-Queen-Token)
+        r_csrf = c.post("/api/keys/clear", headers={"Origin": "https://evil.example.com"})
+        r_tok = c.get("/api/keys", headers={"Origin": "https://evil.example.com", "X-Queen-Token": LOCAL_API_TOKEN})
+        sec_ok = r_csrf.status_code == 403 and r_tok.status_code == 200
+        record("Local API Origin/CSRF guard & X-Queen-Token auth", "Origin guard on /api/*", sec_ok, f"evil Origin→HTTP {r_csrf.status_code}, valid X-Queen-Token→HTTP {r_tok.status_code}")
+
+        # 11. Star Menu & Startup proxy
+        r_star = c.get("/api/star/startup")
+        j_star = r_star.get_json(silent=True) or {}
+        star_ok = r_star.status_code == 200 and j_star.get("ok") is True and isinstance(j_star.get("folders"), list)
+        record("Star Menu & Startup proxy (/api/star/startup)", "GET /api/star/startup", star_ok, f"HTTP {r_star.status_code}, folders={len(j_star.get('folders', []))}, star_api={j_star.get('star_api_online')}")
+
+        # 12. Voice Engine status proxy
+        r_voice = c.get("/api/voice/speaking")
+        j_voice = r_voice.get_json(silent=True) or {}
+        voice_ok = r_voice.status_code == 200 and "voice_online" in j_voice
+        record("Voice Engine status proxy (/api/voice/speaking)", "GET /api/voice/speaking", voice_ok, f"HTTP {r_voice.status_code}, voice_online={j_voice.get('voice_online')}")
+
+        # 13. Elevate Media watcher board & WhatsApp feed
+        r_eb = c.get("/api/elevate/board")
+        j_eb = r_eb.get_json(silent=True) or {}
+        r_ew = c.get("/api/elevate/whatsapp?count=5")
+        j_ew = r_ew.get_json(silent=True) or {}
+        r_er = c.post("/api/elevate/resolve", json={"tool": "evil_script.py"})
+        elev_ok = (
+            r_eb.status_code == 200
+            and j_eb.get("ok") is True
+            and r_ew.status_code == 200
+            and j_ew.get("ok") is True
+            and r_er.status_code == 403
+        )
+        record("Elevate Media board, WhatsApp & Resolve allowlist", "GET /api/elevate/board + /whatsapp + allowlist", elev_ok, f"projects={len(j_eb.get('projects', []))}, msgs={j_ew.get('count')}, evil_tool→HTTP {r_er.status_code}")
 
     summary_color = "\033[1;32m" if failed == 0 else "\033[1;31m"
     _term_print("\033[1;35m" + "─" * 70 + "\033[0m")
@@ -1885,17 +2445,36 @@ def api_test_live():
 
 @app.get("/api/models")
 def get_models():
+    merged_pricing = {**MODEL_PRICING, **LIVE_MODEL_PRICING}
     if not pool.keys:
-        return jsonify(models=[DEFAULT_MODEL, "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"], default=DEFAULT_MODEL, pricing=MODEL_PRICING, needs_key=True)
+        return jsonify(models=[DEFAULT_MODEL, "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"], default=DEFAULT_MODEL, pricing=merged_pricing, needs_key=True)
     try:
         client = Groq(api_key=pool.keys[0], max_retries=0)
         data = client.models.list()
-        chat_models = [m.id for m in data.data if "whisper" not in m.id and "guard" not in m.id]
+        chat_models = []
+        for m in data.data:
+            mid = m.id
+            if "whisper" not in mid and "guard" not in mid:
+                chat_models.append(mid)
+            # Extract live per-token pricing if Groq includes pricing metadata on model objects
+            p_meta = getattr(m, "pricing", None) or (m.model_extra or {}).get("pricing") if hasattr(m, "model_extra") else None
+            if isinstance(p_meta, dict):
+                try:
+                    p_in = float(p_meta.get("prompt") or p_meta.get("input") or 0)
+                    p_out = float(p_meta.get("completion") or p_meta.get("output") or 0)
+                    if p_in > 0 and p_in < 0.01:
+                        p_in *= 1_000_000
+                        p_out *= 1_000_000
+                    if p_in > 0 or p_out > 0:
+                        LIVE_MODEL_PRICING[mid] = (round(p_in, 4), round(p_out, 4))
+                except Exception:
+                    pass
+        merged_pricing = {**MODEL_PRICING, **LIVE_MODEL_PRICING}
         if not chat_models:
             chat_models = [DEFAULT_MODEL, "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"]
-        return jsonify(models=chat_models, default=DEFAULT_MODEL, pricing=MODEL_PRICING)
+        return jsonify(models=chat_models, default=DEFAULT_MODEL, pricing=merged_pricing)
     except Exception as exc:
-        return jsonify(models=[DEFAULT_MODEL, "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"], default=DEFAULT_MODEL, pricing=MODEL_PRICING, error=str(exc))
+        return jsonify(models=[DEFAULT_MODEL, "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"], default=DEFAULT_MODEL, pricing=merged_pricing, error=str(exc))
 
 @app.get("/api/billing")
 def get_billing():

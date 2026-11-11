@@ -17,3 +17,6 @@
 - The model ignored the casual persona's spirit and said "I'm stuck as an AI" twice: a system prompt for a character needs a
   stronger line (stay in character, never mention being an AI) if street-talk tests matter.
 - Public and unpromoted repository: no README, no description; the description lives in TAKEOVER.md (repo-privacy.md).
+- Groq streaming usage lives on `chunk.x_groq.usage` (with `completion_tokens_details.reasoning_tokens`), not always top-level `chunk.usage`. Reading `x_groq.usage` fixed the inflated ~2,600-token estimate down to exact Groq invoice counts (e.g. 729 in / 71 out).
+- `sys.path.insert(0, str(Path.home() / ".groq"))` before repo root caused `qwen_app/app.py` to import the stale installed `~/.groq/groq_pool.py` during pre-deploy CI checks; inserting repo root after `~/.groq` at index `0` ensures source-first resolution.
+- `btnSend.disabled = true` during streaming prevented clicking the Stop (`AbortController`) button in `index.html`; keeping `btnSend.disabled = false` while `isBusy` is true restores one-click stream cancellation.

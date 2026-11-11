@@ -583,6 +583,9 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
       </div>
       <div class="topbar-right">
         <span id="version-badge" title="App version" style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--green);background:rgba(111,186,138,.12);border:1px solid rgba(111,186,138,.3);border-radius:6px;padding:3px 10px;cursor:default;letter-spacing:.03em;">__VERSION__</span>
+        <button class="btn-icon" id="btn-star" title="⭐ Star Menu & Computer Control">⭐</button>
+        <button class="btn-icon" id="btn-voice" title="🔊 Voice Engine & Subtitles">🔊</button>
+        <button class="btn-icon" id="btn-elevate" title="🎬 Elevate Media Production">🎬</button>
         <button class="btn-icon" id="btn-github" title="🐙 GitHub Reader">🐙</button>
         <button class="btn-icon" id="btn-self-update" title="🔧 Self-Update" style="color:var(--amber);">🔧</button>
         <button class="btn-icon" id="btn-persona" title="System Prompt / Persona">🎭</button>
@@ -598,7 +601,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
       <div class="stat">Tokens: <span class="stat-val" id="sb-tokens">0</span></div>
       <div class="stat">Prompts: <span class="stat-val" id="sb-prompts">0</span></div>
       <div class="stat">Keys: <span class="stat-val" id="sb-keys">0</span></div>
-      <div class="stat">v__VERSION__</div>
+      <div class="stat">__VERSION__</div>
     </div>
 
     <!-- Chat Scroll Area -->
@@ -764,7 +767,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
       <div class="settings-row">
         <div>
           <div class="settings-name">Groq AI Studio</div>
-          <div class="settings-desc">Version v__VERSION__ — Dynamic Port, Auto Code Box, Key Manager, Self-Update</div>
+          <div class="settings-desc">Version __VERSION__ — Star Menu, Voice Engine, Elevate Media, Key Pool, CI Self-Update</div>
         </div>
       </div>
     </div>
@@ -825,11 +828,96 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   </div>
 </div>
 
+<!-- ══ STAR MENU & STARTUP MODAL ══ -->
+<div class="modal-bg" id="modal-star">
+  <div class="modal" style="max-width:720px;">
+    <div class="modal-header">
+      <div class="modal-title">⭐ Star Menu &amp; Computer Control <span id="star-api-badge" style="font-size:11px;color:var(--text-dim);font-weight:400;">(:8863)</span></div>
+      <button class="modal-close" onclick="closeModal('modal-star')">✕</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+      <input id="star-filter-input" class="paste-input" placeholder="Filter 55 Star Menu apps or folders…" style="flex:1;min-width:180px;">
+      <button class="btn-sec" id="btn-star-refresh">🔄 Refresh</button>
+    </div>
+    <div id="star-startup-summary" style="font-size:12px;color:var(--text-sub);background:var(--bg-surface);border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-bottom:12px;">Loading Startup config…</div>
+    <div id="star-status" style="font-size:12px;min-height:18px;margin-bottom:8px;color:var(--accent);"></div>
+    <div id="star-apps-list" style="max-height:360px;overflow-y:auto;"></div>
+  </div>
+</div>
+
+<!-- ══ VOICE ENGINE & SUBTITLES MODAL ══ -->
+<div class="modal-bg" id="modal-voice">
+  <div class="modal" style="max-width:580px;">
+    <div class="modal-header">
+      <div class="modal-title">🔊 Local Voice Engine &amp; Subtitles <span style="font-size:11px;color:var(--text-dim);font-weight:400;">(:8837)</span></div>
+      <button class="modal-close" onclick="closeModal('modal-voice')">✕</button>
+    </div>
+    <div id="voice-live-banner" style="background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--text-sub);">
+      Checking MANTRA_VOICE status…
+    </div>
+    <div class="settings-label">Speak Aloud with On-Screen Subtitles</div>
+    <textarea id="voice-text-input" rows="4" style="width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:10px 12px;font-family:var(--font);font-size:14px;outline:none;resize:vertical;margin-bottom:10px;" placeholder="Enter text for Queen to speak aloud with word-highlighted film subtitles…"></textarea>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+      <button class="btn-primary" id="btn-voice-speak">▶ Speak Now</button>
+      <button class="btn-sec" id="btn-voice-pause">⏸ Pause / Resume</button>
+      <button class="btn-danger" id="btn-voice-stop">■ Stop</button>
+      <button class="btn-sec" id="btn-voice-refresh">🔄 Status</button>
+    </div>
+    <div id="voice-action-status" style="font-size:12px;min-height:18px;color:var(--green);"></div>
+  </div>
+</div>
+
+<!-- ══ ELEVATE MEDIA PRODUCTION MODAL ══ -->
+<div class="modal-bg" id="modal-elevate">
+  <div class="modal" style="max-width:740px;">
+    <div class="modal-header">
+      <div class="modal-title">🎬 Elevate Media Production Hub</div>
+      <button class="modal-close" onclick="closeModal('modal-elevate')">✕</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <button class="btn-sec" id="btn-elev-board">📋 Watcher Board</button>
+      <button class="btn-sec" id="btn-elev-wa">💬 WhatsApp ("AI Videos")</button>
+      <input id="elev-project-input" class="paste-input" value="HIR_98" style="width:110px;" placeholder="HIR_98">
+      <button class="btn-sec" id="btn-elev-comments">🎯 Drive Comments</button>
+      <button class="btn-sec" id="btn-elev-layout">📐 Layout Check</button>
+    </div>
+    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px;">
+      <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Free Gemini Image Generation / WhatsApp Unsent Draft</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+        <input id="elev-prompt-input" class="paste-input" style="flex:1;min-width:220px;" placeholder="Gemini image prompt OR WhatsApp unsent reply text…">
+        <button class="btn-primary" id="btn-elev-gemini-chrome">✨ Gemini Chrome</button>
+        <button class="btn-sec" id="btn-elev-wa-draft">📝 Draft in WhatsApp (Unsent)</button>
+      </div>
+      <div id="elev-status" style="font-size:12px;color:var(--text-sub);min-height:16px;"></div>
+    </div>
+    <pre id="elev-output" style="background:#131210;border:1px solid var(--border);border-radius:10px;padding:14px;max-height:320px;overflow:auto;font-family:var(--mono);font-size:12px;color:var(--text-sub);white-space:pre-wrap;">Select Watcher Board, WhatsApp, or Drive Comments above…</pre>
+  </div>
+</div>
+
 <script>
 "use strict";
 // ═══════════════════════════════════════════════════
-//  GROQ AI STUDIO — Client JS  v__VERSION__
+//  GROQ AI STUDIO — Client JS  __VERSION__
 // ═══════════════════════════════════════════════════
+
+var QUEEN_API_TOKEN     = "__API_TOKEN__";
+
+// Automatically attach X-Queen-Token to same-origin /api/* calls
+(function installTokenFetch(){
+  var origFetch = window.fetch.bind(window);
+  window.fetch = function(input, init){
+    init = init || {};
+    var url = typeof input === "string" ? input : (input && input.url) || "";
+    if (url.indexOf("/api/") === 0 || url.indexOf(window.location.origin + "/api/") === 0){
+      var hdrs = new Headers(init.headers || {});
+      if (QUEEN_API_TOKEN && QUEEN_API_TOKEN.indexOf("__") !== 0){
+        hdrs.set("X-Queen-Token", QUEEN_API_TOKEN);
+      }
+      init.headers = hdrs;
+    }
+    return origFetch(input, init);
+  };
+})();
 
 var STORAGE_SESSIONS    = "groq_sessions_v3";
 var STORAGE_SESSION_ID  = "groq_session_id_v3";
@@ -1087,7 +1175,21 @@ function addAssistantMsg(content, reasoning, streaming, telemetry, mode){
 
   var name = document.createElement("div");
   name.className = "asst-name";
-  name.textContent = "Groq Assistant";
+  name.style.display = "flex";
+  name.style.alignItems = "center";
+  name.style.gap = "8px";
+  name.innerHTML = '<span>Queen (Groq Assistant)</span>';
+  var spkBtn = document.createElement("button");
+  spkBtn.className = "btn-copy";
+  spkBtn.style.padding = "1px 7px";
+  spkBtn.style.fontSize = "11px";
+  spkBtn.title = "Speak aloud with on-screen subtitles (:8837)";
+  spkBtn.textContent = "🔊 Speak";
+  spkBtn.onclick = function(){
+    var plain = prose.innerText || "";
+    if (plain.trim()) speakWithVoiceEngine(plain.trim());
+  };
+  name.appendChild(spkBtn);
   body.appendChild(name);
 
   var parsed = splitThink(content||"");
@@ -1115,9 +1217,10 @@ function addAssistantMsg(content, reasoning, streaming, telemetry, mode){
     var tbar = document.createElement("div");
     tbar.className = "tele-bar";
     var spendStr = "$"+Number(telemetry.cost||0).toFixed(6);
+    var rInfo = telemetry.reasoning_tokens ? ' [think '+telemetry.reasoning_tokens+']' : '';
     tbar.innerHTML =
       '<span class="tele-spend">💰 '+spendStr+'</span>'+
-      '<span>🔢 '+(telemetry.total_tokens||0)+' tok ('+(telemetry.prompt_tokens||0)+' in / '+(telemetry.completion_tokens||0)+' out)</span>'+
+      '<span>🔢 '+(telemetry.total_tokens||0)+' tok ('+(telemetry.prompt_tokens||0)+' in / '+(telemetry.completion_tokens||0)+' out'+rInfo+')</span>'+
       '<span>⚡ '+(telemetry.speed||0)+' tok/s ('+(telemetry.elapsed||0)+'s)</span>'+
       (telemetry.auto_detected_code?'<span class="auto-code-pill">⚡ Code Box auto-detected</span>':'')+
       '<span class="tele-confirmed">✓ Confirmed</span>';
@@ -1233,9 +1336,12 @@ promptInput.addEventListener("keydown",function(e){
   if (e.key==="Enter" && !e.shiftKey){ e.preventDefault(); sendMessage(); }
 });
 
-// ── Send Message ─────────────────────────────────────
+// ── Send / Stop Message ──────────────────────────────
 var btnSend = document.getElementById("btn-send");
-btnSend.onclick = sendMessage;
+btnSend.onclick = function(){
+  if (isBusy && abortCtrl){ abortCtrl.abort(); return; }
+  sendMessage();
+};
 
 async function sendMessage(){
   var text = promptInput.value.trim();
@@ -1264,7 +1370,8 @@ async function sendMessage(){
   stickBottom();
 
   isBusy = true;
-  btnSend.disabled = true;
+  btnSend.disabled = false;
+  btnSend.title = "Stop generation";
   btnSend.classList.add("stop");
   btnSend.innerHTML = '<svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>';
   abortCtrl = new AbortController();
@@ -1317,6 +1424,7 @@ async function sendMessage(){
 
   isBusy = false;
   btnSend.disabled = false;
+  btnSend.title = "Send (Enter)";
   btnSend.classList.remove("stop");
   btnSend.innerHTML = '<svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>';
   stickBottom();
@@ -1947,6 +2055,250 @@ window.restoreBackup = async function(backupName){
       suStatus("✗ " + (data.error || "Restore failed"), false);
     }
   } catch(e){ suStatus("✗ " + e.message, false); }
+};
+
+// ═══════════════════════════════════════════════════
+//  STAR MENU & STARTUP COMPUTER CONTROL (:8863)
+// ═══════════════════════════════════════════════════
+var starDataCache = null;
+
+document.getElementById("btn-star").onclick = function(){
+  openModal("modal-star");
+  loadStarStartup();
+};
+document.getElementById("btn-star-refresh").onclick = loadStarStartup;
+document.getElementById("star-filter-input").oninput = renderStarList;
+
+async function loadStarStartup(){
+  var sumEl = document.getElementById("star-startup-summary");
+  var listEl = document.getElementById("star-apps-list");
+  sumEl.textContent = "Loading Star Menu & Startup apps…";
+  try {
+    var res = await fetch("/api/star/startup");
+    var data = await res.json();
+    starDataCache = data;
+    var badge = document.getElementById("star-api-badge");
+    badge.textContent = data.star_api_online ? "● STAR_API :8863 online" : "○ STAR_API offline";
+    badge.style.color = data.star_api_online ? "var(--green)" : "var(--amber)";
+    var always = ((data.autostart && data.autostart.always) || []).join(", ") || "none";
+    var runningCount = (data.live_apps || []).filter(function(a){ return a.running; }).length;
+    sumEl.innerHTML = '<strong>Startup Always:</strong> ' + esc(always) +
+      ' &nbsp;·&nbsp; <strong>Folders:</strong> ' + ((data.folders||[]).length) +
+      ' &nbsp;·&nbsp; <strong>Running Mantra Apps:</strong> ' + runningCount + '/' + ((data.live_apps||[]).length);
+    renderStarList();
+  } catch(e){
+    sumEl.textContent = "Error: " + e.message;
+    listEl.innerHTML = "";
+  }
+}
+
+function renderStarList(){
+  var listEl = document.getElementById("star-apps-list");
+  if (!starDataCache) return;
+  var q = (document.getElementById("star-filter-input").value || "").toLowerCase().trim();
+  var liveApps = starDataCache.live_apps || [];
+  var html = "";
+  liveApps.forEach(function(app){
+    var nm = app.name || "";
+    if (q && nm.toLowerCase().indexOf(q) === -1) return;
+    var safeAttr = esc(nm).replace(/'/g, "\\'");
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-radius:8px;background:var(--bg-surface);border:1px solid var(--border);margin-bottom:5px;">' +
+      '<div style="display:flex;align-items:center;gap:8px;min-width:0;">' +
+        '<span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:' + (app.running ? 'var(--green)' : 'var(--text-dim)') + ';"></span>' +
+        '<span style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(nm) + '</span>' +
+      '</div>' +
+      '<div style="display:flex;gap:5px;flex-shrink:0;">' +
+        '<button class="btn-sec" style="padding:3px 9px;font-size:11px;" onclick="runStarAction(\'' + safeAttr + '\', \'open\')">Open</button>' +
+        '<button class="btn-sec" style="padding:3px 9px;font-size:11px;" onclick="runStarAction(\'' + safeAttr + '\', \'read\')">AX Controls</button>' +
+        (app.running ? '<button class="btn-danger" style="padding:3px 9px;font-size:11px;" onclick="runStarAction(\'' + safeAttr + '\', \'quit\')">Quit</button>' : '') +
+      '</div>' +
+    '</div>';
+  });
+  listEl.innerHTML = html || '<div style="color:var(--text-dim);font-size:13px;padding:8px;">No matching Star Menu apps.</div>';
+}
+
+window.runStarAction = async function(appName, action){
+  var st = document.getElementById("star-status");
+  st.textContent = "⏳ " + action.toUpperCase() + " → " + appName + "…";
+  try {
+    var res = await fetch("/api/star/action", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({app: appName, action: action})
+    });
+    var data = await res.json();
+    if (action === "read" && data.result){
+      var ctrls = (data.result.controls || data.result || []);
+      st.textContent = "✓ " + appName + ": " + JSON.stringify(ctrls).slice(0, 220);
+    } else {
+      st.textContent = (data.ok ? "✓ " : "⚠ ") + appName + " (" + action + ")";
+      setTimeout(loadStarStartup, 600);
+    }
+  } catch(e){
+    st.textContent = "✗ " + e.message;
+  }
+};
+
+// ═══════════════════════════════════════════════════
+//  VOICE ENGINE & SUBTITLES (:8837)
+// ═══════════════════════════════════════════════════
+var voicePollTimer = null;
+
+document.getElementById("btn-voice").onclick = function(){
+  openModal("modal-voice");
+  refreshVoiceStatus();
+  if (voicePollTimer) clearInterval(voicePollTimer);
+  voicePollTimer = setInterval(function(){
+    if (!document.getElementById("modal-voice").classList.contains("open")){
+      clearInterval(voicePollTimer); voicePollTimer = null; return;
+    }
+    refreshVoiceStatus();
+  }, 900);
+};
+document.getElementById("btn-voice-refresh").onclick = refreshVoiceStatus;
+
+async function refreshVoiceStatus(){
+  var banner = document.getElementById("voice-live-banner");
+  try {
+    var res = await fetch("/api/voice/speaking");
+    var d = await res.json();
+    if (!d.voice_online){
+      banner.innerHTML = '<span style="color:var(--amber);">○ MANTRA_VOICE (:8837) is currently offline</span>';
+      return;
+    }
+    var stateTxt = d.on ? (d.paused ? "⏸ Paused" : "🔊 Speaking live") : "● Idle & Ready (:8837)";
+    var sent = d.sentence || "";
+    var highlighted = esc(sent);
+    if (d.on && sent && Array.isArray(d.words) && typeof d.pos === "number"){
+      for (var i = 0; i < d.words.length; i++){
+        var w = d.words[i];
+        if (d.pos >= w.t && d.pos <= (w.t + (w.d || 0.35))){
+          highlighted = esc(sent.slice(0, w.s)) +
+            '<strong style="color:var(--accent);text-decoration:underline;">' + esc(sent.slice(w.s, w.e)) + '</strong>' +
+            esc(sent.slice(w.e));
+          break;
+        }
+      }
+    }
+    banner.innerHTML = '<div style="font-weight:600;color:' + (d.on ? 'var(--green)' : 'var(--text)') + ';margin-bottom:4px;">' + stateTxt + '</div>' +
+      (sent ? '<div style="font-size:13px;color:var(--text-sub);">“' + highlighted + '”</div>' : '');
+  } catch(e){
+    banner.textContent = "Voice check error: " + e.message;
+  }
+}
+
+async function speakWithVoiceEngine(text){
+  try {
+    var res = await fetch("/api/voice/speak", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({text: text})
+    });
+    var d = await res.json();
+    var el = document.getElementById("voice-action-status");
+    if (el) el.textContent = d.ok ? "✓ Speaking aloud with subtitles…" : ("⚠ " + (d.error || "Failed"));
+  } catch(e){}
+}
+
+document.getElementById("btn-voice-speak").onclick = function(){
+  var txt = document.getElementById("voice-text-input").value.trim();
+  if (txt) speakWithVoiceEngine(txt);
+};
+document.getElementById("btn-voice-pause").onclick = async function(){
+  await fetch("/api/voice/pause", {method: "POST"});
+  refreshVoiceStatus();
+};
+document.getElementById("btn-voice-stop").onclick = async function(){
+  await fetch("/api/voice/stop", {method: "POST"});
+  refreshVoiceStatus();
+};
+
+// ═══════════════════════════════════════════════════
+//  ELEVATE MEDIA PRODUCTION HUB
+// ═══════════════════════════════════════════════════
+document.getElementById("btn-elevate").onclick = function(){
+  openModal("modal-elevate");
+  loadElevateBoard();
+};
+document.getElementById("btn-elev-board").onclick = loadElevateBoard;
+
+async function loadElevateBoard(){
+  var out = document.getElementById("elev-output");
+  out.textContent = "Loading Elevate Media Watcher Board…";
+  try {
+    var res = await fetch("/api/elevate/board");
+    var d = await res.json();
+    out.textContent = JSON.stringify(d.projects || d, null, 2);
+  } catch(e){ out.textContent = "Error: " + e.message; }
+}
+
+document.getElementById("btn-elev-wa").onclick = async function(){
+  var out = document.getElementById("elev-output");
+  out.textContent = "Loading WhatsApp 'AI Videos' messages…";
+  try {
+    var res = await fetch("/api/elevate/whatsapp?count=20");
+    var d = await res.json();
+    var lines = (d.messages || []).map(function(m){ return (m.pre || "") + (m.text || ""); });
+    out.textContent = lines.join("\n\n---\n\n") || "No messages found.";
+  } catch(e){ out.textContent = "Error: " + e.message; }
+};
+
+document.getElementById("btn-elev-comments").onclick = async function(){
+  var proj = (document.getElementById("elev-project-input").value || "HIR_98").trim();
+  var out = document.getElementById("elev-output");
+  out.textContent = "Reading Google Drive timestamped comments for " + proj + "…";
+  try {
+    var res = await fetch("/api/elevate/drive-comments?project=" + encodeURIComponent(proj));
+    var d = await res.json();
+    out.textContent = JSON.stringify(d, null, 2);
+  } catch(e){ out.textContent = "Error: " + e.message; }
+};
+
+document.getElementById("btn-elev-layout").onclick = async function(){
+  var out = document.getElementById("elev-output");
+  out.textContent = "Running layout_check.py…";
+  try {
+    var res = await fetch("/api/elevate/resolve", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({tool: "layout_check.py", args: []})
+    });
+    var d = await res.json();
+    out.textContent = (d.stdout || "") + (d.stderr ? "\n" + d.stderr : "");
+  } catch(e){ out.textContent = "Error: " + e.message; }
+};
+
+document.getElementById("btn-elev-gemini-chrome").onclick = async function(){
+  var p = document.getElementById("elev-prompt-input").value.trim();
+  var proj = (document.getElementById("elev-project-input").value || "HIR_98").trim();
+  var st = document.getElementById("elev-status");
+  if (!p){ st.textContent = "⚠ Enter a prompt first."; return; }
+  st.textContent = "⏳ Opening Gemini in Chrome with prompt…";
+  try {
+    var res = await fetch("/api/elevate/gemini-chrome", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({prompt: p, project: proj, mode: "chrome"})
+    });
+    var d = await res.json();
+    st.textContent = d.ok ? ("✓ " + d.message) : ("✗ " + (d.error || "Failed"));
+  } catch(e){ st.textContent = "✗ " + e.message; }
+};
+
+document.getElementById("btn-elev-wa-draft").onclick = async function(){
+  var txt = document.getElementById("elev-prompt-input").value.trim();
+  var st = document.getElementById("elev-status");
+  if (!txt){ st.textContent = "⚠ Enter draft reply text first."; return; }
+  st.textContent = "⏳ Typing unsent draft into WhatsApp Web ('AI Videos')…";
+  try {
+    var res = await fetch("/api/elevate/whatsapp/draft", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({chat: "AI Videos", text: txt})
+    });
+    var d = await res.json();
+    st.textContent = d.ok ? "✓ Draft typed UNSENT in WhatsApp (human gate: review & press Send yourself)." : ("⚠ " + (d.error || "Failed"));
+  } catch(e){ st.textContent = "✗ " + e.message; }
 };
 
 // ═══════════════════════════════════════════════════

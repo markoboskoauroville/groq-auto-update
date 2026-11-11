@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "updated_at": "2026-11-11T10:33:03+0100",
+  "version": 3,
+  "updated_at": "2026-11-11T15:20:00+0100",
   "log": [
     {
       "version": 1,
@@ -14,6 +14,16 @@
       "message": "Test: self-update roundtrip (no-op, verifying git push)",
       "files": [
         "app.py"
+      ]
+    },
+    {
+      "version": 3,
+      "timestamp": "2026-11-11T15:20:00+0100",
+      "message": "v3: Star Menu & Startup proxy+UI, Voice Engine proxy+UI, Elevate Media production endpoints+UI, unified KeyPool, local API Origin/CSRF guard, and token/pricing accuracy",
+      "files": [
+        "groq_pool.py",
+        "qwen_app/app.py",
+        "qwen_app/index.html"
       ]
     }
   ]

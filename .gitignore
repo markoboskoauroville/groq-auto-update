@@ -12,4 +12,5 @@ __pycache__/
 *.pyc
 incoming_update/
 chats/
+api_token
 .DS_Store

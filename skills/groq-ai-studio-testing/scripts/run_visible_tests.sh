@@ -73,10 +73,10 @@ sys.exit(0 if d.get("ok") else 1)
 STATUS=$?
 
 echo ""
-printf "\033[1;36m$ curl -s -X POST %s/api/remote/send (asking Queen in live browser & terminal if she knows how to self-update)\033[0m\n" "$BASE"
+printf "\033[1;36m$ curl -s -X POST %s/api/remote/send (asking Queen in live browser & terminal about her new v3 capabilities)\033[0m\n" "$BASE"
 REMOTE_JSON=$(curl -s -X POST "$BASE/api/remote/send" \
   -H 'content-type: application/json' \
-  -d '{"prompt":"Do you understand now and know how you can self-update? Answer concisely in 2-3 sentences."}')
+  -d '{"prompt":"List your built-in v3 integrations (Self-Update, Star Menu, Voice Engine, Elevate Media) in 2 short sentences."}')
 echo "$REMOTE_JSON" | python3 -c '
 import sys, json
 d = json.load(sys.stdin)

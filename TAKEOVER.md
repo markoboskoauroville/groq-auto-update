@@ -1,7 +1,7 @@
 # Groq AI Studio: takeover
 
 Repository: markoboskoauroville/groq_ai_studio (public, unpromoted: no README, no description; this file is the description).
-Status 11.11.2026: version v2 runs on this Mac, port 8765, `/health` answers `{"app":"groq-modern-chat","version":"v2","ok":true}`.
+Status 11.11.2026: version v3 runs on this Mac, port 8765, `/health` answers `{"app":"groq-modern-chat","version":"v3","ok":true}`.
 Marko, 11.11.2026: "We are developing this app now." Nothing is compiled: it is Python and one HTML file, so there is no
 GitHub Actions build; it runs from source.
 Auto-update repo: `markoboskoauroville/groq-auto-update` (public). CI-validated updates push here automatically.
@@ -28,10 +28,10 @@ cooldowns, `t` run live visible self-test suite, `h` help.
 ## Files
 | File | Job |
 |---|---|
-| `qwen_app/app.py` | the server: key manager, failover, streaming chat, ledger, GitHub reads, backdoor, port finder, CI pipeline, self-update engine, chat persistence, version management (about 1900 lines) |
-| `qwen_app/index.html` | the whole client: sidebar with sessions, spend, model select, zoom, Prose / Code Box toggle, attach and drag-drop, modals for keys, persona, GitHub, billing, settings, self-update panel (about 1970 lines, `__VERSION__` and `__DEFAULT_MODEL__` are replaced by the server) |
-| `version.json` | current version number and update history log |
-| `groq_pool.py` | the older key pool module used by `groq-cli`, importable from any Python: `KeyPool().complete(messages)` / `.stream(messages)` |
+| `qwen_app/app.py` | the server: unified key pool (`groq_pool.py`), failover, local Origin/CSRF + `X-Queen-Token` security guard, streaming chat with exact Groq usage (`x_groq.usage`), ledger, GitHub reads, Star Menu & Startup proxy (`/api/star/*`), Voice Engine & Subtitles proxy (`/api/voice/*`), Elevate Media production endpoints (`/api/elevate/*`), backdoor, port finder, CI pipeline, self-update engine, chat persistence, version management (about 2500 lines) |
+| `qwen_app/index.html` | the whole client: sidebar with sessions, spend, model select, zoom, Prose / Code Box toggle, live Stop button, `🔊 Speak` per message, attach and drag-drop, modals for keys, persona, GitHub, Star Menu (`⭐`), Voice Engine (`🔊`), Elevate Media (`🎬`), billing, settings, self-update panel (`__VERSION__`, `__DEFAULT_MODEL__`, and `__API_TOKEN__` replaced by the server) |
+| `version.json` | current version number (`v3`) and update history log |
+| `groq_pool.py` | unified key pool module shared by BOTH `qwen_app/app.py` (`DynamicKeyPool`) and `groq-cli` (`KeyPool`): `extract_keys_from_noise`, sticky failover, cooldown persistence |
 | `groq_cli.py`, `groq-cli`, `qwen`, `groq-chat` | the terminal clients and launchers |
 | `install.sh` | copies the code into ~/.groq, makes the venv, installs `requirements.txt`; reads no key |
 The app expects to live in `~/.groq` (it inserts that folder in `sys.path` and keeps its state there). The repo is the source;
@@ -72,7 +72,13 @@ After a failure halfway through a reply the error is shown instead, so text is n
 (`id` or `index`), `/api/keys/clear`, `/api/reset-keys`, `/api/keys/load-file`, `/api/remote/send`
 (`{"prompt","mode","model","system_prompt"}`: a program types into the page; the open page sees it live over `/api/events` and the
 reply and telemetry come back in the response), `/api/chats/*` (server-side chat persistence + auto-title + rename + delete),
-`/api/self_update/*` (CI-gated chunked self-update + backup + git push to both repos), `GET/POST /api/test/live` (runs 9 live self-tests and prints colorized progress to Queen's terminal window), `POST /api/terminal/log` (prints live commands/banners to Queen's terminal console), `/api/github/*`.
+`/api/self_update/*` (CI-gated chunked self-update + backup + git push to both repos),
+`GET /api/star/startup` & `POST /api/star/action` (Star Menu & Startup 55-app control via `STAR_API` `:8863`),
+`GET /api/voice/speaking`, `GET /api/voice/voices`, `POST /api/voice/speak`, `/api/voice/pause`, `/api/voice/stop`, `/api/voice/hear` (Local Voice Engine & on-screen subtitles via `MANTRA_VOICE` `:8837`),
+`GET /api/elevate/board`, `GET /api/elevate/whatsapp`, `POST /api/elevate/whatsapp/draft`, `GET /api/elevate/drive-comments`, `POST /api/elevate/fetch-image`, `POST /api/elevate/gemini-chrome`, `GET /api/elevate/gemini-status`, `POST /api/elevate/resolve` (Elevate Media end-to-end production workflow),
+`GET/POST /api/test/live` (runs 13 live self-tests and prints colorized progress to Queen's terminal window), `POST /api/terminal/log` (prints live commands/banners to Queen's terminal console), `/api/github/*`.
+
+All `/api/*` routes are protected by `local_api_security_guard` (rejects cross-origin `Origin` / `Referer` / `Sec-Fetch-Site: cross-site` with HTTP 403; accepts `X-Queen-Token` from `~/.groq/api_token` and local `curl` / `127.0.0.1` UI calls).
 
 ## What has been checked, and what has not
 Checked 11.11.2026: the server is up and healthy, the keys file holds keys, the code was read through, and a three turn casual
@@ -82,16 +88,14 @@ session: a real answer from every model, failover with a truly exhausted key, th
 `stress_test_09.py` (lives in ~/.gemini/antigravity/brain/.../scratch, not in this repo), the page on a small window.
 
 ## Dangers, named plainly
-- `/api/keys/load-file` reads any file path the caller sends, and `/api/keys/clear`, `/api/keys/delete`, `/api/remote/send`
-  have no password. Safe only because it listens on 127.0.0.1; any local program or web page open in the browser can call it
-  (no CORS or origin check). Add a token or an Origin check before anything else is built on it.
+- Cross-origin browser CSRF is now blocked by `local_api_security_guard` (`Origin`/`Referer`/`Sec-Fetch-Site` check + `~/.groq/api_token` via `X-Queen-Token`). Same-machine processes running as Marko can still call `127.0.0.1:8765`.
 - `run_gh` gives the page read access to every repo `gh` can see.
-- Two key code paths exist (`groq_pool.py` for the CLI, `DynamicKeyPool` in `app.py`): they must stay in step.
-- Cost is shown from a hand-typed price table, so the ledger can drift from Groq's real invoice.
+- Key pool failover is now unified in `groq_pool.py` (`DynamicKeyPool` + `KeyPool`).
+- `MODEL_PRICING` covers the full Groq model catalog and merges any live pricing metadata returned by Groq `/models`; streaming usage now reads `chunk.x_groq.usage` so token counts match Groq's invoice.
 - `launch_server` in the old installer runs `lsof -ti:PORT | xargs kill -9`, which kills whatever holds the port.
 
 ## Where it fits
 Marko's Groq model research (Groq has no image model, models researched for TTT) and scribe's Groq transcription use the same
 Groq keys (numbered keys in ~/Downloads/API/groq-api.txt). KeyringTester checks that these keys work and has read the image with
 `qwen/qwen3.8-27b` (14.10.2026). Work on this app: edit here in ~/Developer/groq_ai_studio, run `./install.sh`, restart `qwen`.
-Skills (registered in `.agents/skills.json`): `skills/groq-ai-studio/SKILL.md` and `skills/groq-ai-studio-testing/SKILL.md` (visible macOS Terminal runner: `skills/groq-ai-studio-testing/scripts/run_visible_tests.sh`).
+Skills (registered in `.agents/skills.json`): `skills/groq-ai-studio/SKILL.md`, `skills/groq-ai-studio-testing/SKILL.md` (visible macOS Terminal runner: `skills/groq-ai-studio-testing/scripts/run_visible_tests.sh`), `skills/star-menu-computer-control/SKILL.md`, and `skills/elevate-media-production/SKILL.md`.

@@ -52,9 +52,12 @@ The app can update its own source files through a chunked transfer system:
 | GET/POST | `/api/chats/*` | Chat persistence |
 | GET/POST | `/api/self_update/*` | Self-update pipeline |
 | GET/POST | `/api/github/*` | GitHub reader |
-| GET | `/api/models` | Available models |
+| GET | `/api/models` | Available models + live/catalog pricing |
 | GET | `/api/billing` | Spend + rate limits |
-| GET/POST | `/api/test/live` | Built-in visible self-test backdoor (prints 9 checks to Queen's terminal + returns JSON) |
+| GET/POST | `/api/star/*` | Star Menu & Startup 55-app computer control (`STAR_API` `:8863`) |
+| GET/POST | `/api/voice/*` | Local Voice Engine & film subtitles (`MANTRA_VOICE` `:8837`) |
+| GET/POST | `/api/elevate/*` | Elevate Media production (board, WhatsApp, Drive comments, image fetch, free Gemini, Resolve tools) |
+| GET/POST | `/api/test/live` | Built-in visible self-test backdoor (prints 13 checks to Queen's terminal + returns JSON) |
 | POST | `/api/terminal/log` | Print live `$ command` / status banners into Queen's terminal console |
 
 ## Rules
@@ -65,7 +68,11 @@ The app can update its own source files through a chunked transfer system:
 5. **Never commit truncated code.** The CI pipeline rejects it automatically.
 
 ## Open work
-Add a token or Origin check to the local API (TAKEOVER, Dangers); merge the two key pools; read real prices instead of the typed table.
+All previously open items completed in v3:
+- Local API Origin/CSRF guard + `X-Queen-Token` (`~/.groq/api_token`) added.
+- Key pools unified in `groq_pool.py` (`DynamicKeyPool` + `KeyPool`).
+- Streaming usage now reads `chunk.x_groq.usage` + `reasoning_tokens` and `MODEL_PRICING` / `LIVE_MODEL_PRICING` expanded.
+- Star Menu (`/api/star/*`), Voice Engine (`/api/voice/*`), and Elevate Media (`/api/elevate/*`) backend routes + web UI modals (`⭐`, `🔊`, `🎬`) built and verified.
 
 ## Run log
 - 11.11.2026: repo created from the running v09; skill written. Backdoor chat tested (3 turns, works); token count per turn looks inflated, check it.
@@ -73,6 +80,7 @@ Add a token or Origin check to the local API (TAKEOVER, Dangers); merge the two 
 - 11.11.2026: Added `GEMINI.md` workspace rule — mandatory handover + skill update after every code change. Both repos now public.
 - 11.11.2026: Testing session — fixed 3 bugs: CI false positives (bracket counting demoted to warnings), GIT_ROOT now detects installed vs source repo, assemble writes to both copies. All tests pass. Version bumped to v2. Testing skill written at `skills/groq-ai-studio-testing/SKILL.md`.
 - 11.11.2026: Added `.agents/skills.json` manifest, visible macOS Terminal test runner (`skills/groq-ai-studio-testing/scripts/run_visible_tests.sh`), Python server live-test backdoors (`POST /api/test/live`, `POST /api/terminal/log`, `'t'` terminal key), and `build_queen_system_prompt()` so Queen always knows how she self-updates. Verified 9/9 live checks + backdoor chat in Terminal.app.
+- 11.11.2026: v3 upgrade — finished all unfinished features: `/api/star/*` + `⭐` Star Menu UI, `/api/voice/*` + `🔊` Voice Engine UI & per-message Speak button, `/api/elevate/*` + `🎬` Elevate Media Production Hub UI, unified `groq_pool.py`, `local_api_security_guard` (`Origin`/`Referer`/`X-Queen-Token`), `x_groq.usage` exact token tracking, and working Stop button. Verified 13/13 live checks + backdoor chat visibly in macOS Terminal.app.
 
 ## Mistakes already made
 - Looking for `qwen` with `which` in a tool shell: it is in ~/.groq, on the PATH only through ~/.zshrc.

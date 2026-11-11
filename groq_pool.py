@@ -1,7 +1,8 @@
-"""Groq API key pool with automatic fallback.
+"""Groq API key pool with automatic fallback (shared by Queen web studio and groq-cli).
 
-Keys are read from ~/.groq/keys.txt (one per line). A single GROQ_API_KEY
-from ~/.groq/.env or the environment is added as a last resort.
+Keys are read from ~/.groq/keys.txt (noise-tolerant: extracts clean `gsk_...` keys
+from .txt, .env, JSON, bash exports, or logs). A single GROQ_API_KEY from
+~/.groq/.env or the environment is added as a fallback.
 
 The pool is sticky: it keeps using the last key that worked and only moves
 to the next one when the current key is rate limited, out of quota, or
@@ -20,6 +21,7 @@ Use from your own Python code:
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -45,85 +47,158 @@ REJECTED_COOLDOWN = 30 * 24 * 3600  # invalid or blocked keys: retry in 30 days
 DEFAULT_RATE_COOLDOWN = 60.0
 
 
+def extract_keys_from_noise(text: str) -> list[str]:
+    """Parse noisy text, .env files, json, logs, bash exports, and extract clean Groq keys."""
+    if not text:
+        return []
+    matches = re.findall(r"gsk_[A-Za-z0-9_-]+", text)
+    valid_keys = []
+    for raw in matches:
+        clean = re.sub(r"[^A-Za-z0-9_-].*$", "", raw).rstrip("-_'\",.;:()[]{}")
+        if clean.startswith("gsk_") and len(clean) >= 20:
+            valid_keys.append(clean)
+    return list(dict.fromkeys(valid_keys))
+
+
 class AllKeysExhausted(RuntimeError):
     """Every key is cooling down or rejected."""
 
 
-class KeyPool:
-    def __init__(self, quiet=False):
-        self.quiet = quiet
-        self.keys = self._load_keys()
-        if not self.keys:
-            raise RuntimeError(
-                "No Groq API keys found. Add them to ~/.groq/keys.txt "
-                "or set GROQ_API_KEY in ~/.groq/.env."
-            )
-        self.state = self._load_state()
+class DynamicKeyPool:
+    """Unified mutable key pool used by Queen (`qwen_app/app.py`) and `KeyPool` (`groq-cli`)."""
 
-    # ----- loading and state -----
+    def __init__(self, quiet: bool = True, include_env: bool = True):
+        self.quiet = quiet
+        self.include_env = include_env
+        self.keys: list[str] = []
+        self.state: dict = {"current": None, "cooldown": {}}
+        self.reload()
+
     @staticmethod
-    def _id(key):
+    def _id(key: str) -> str:
         return hashlib.sha256(key.encode()).hexdigest()[:12]
 
     @staticmethod
-    def _mask(key):
-        return f"{key[:6]}...{key[-4:]}"
+    def _mask(key: str) -> str:
+        return f"{key[:6]}...{key[-4:]}" if len(key) >= 10 else key
 
-    def _load_keys(self):
-        keys = []
+    def reload(self):
+        keys: list[str] = []
         if KEYS_FILE.exists():
-            for line in KEYS_FILE.read_text().splitlines():
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    keys.append(line)
-        env_key = os.environ.get("GROQ_API_KEY", "").strip()
-        if env_key and env_key != "your_api_key_here":
-            keys.append(env_key)
-        seen, unique = set(), []
-        for key in keys:
-            if key not in seen:
-                seen.add(key)
-                unique.append(key)
-        return unique
+            try:
+                content = KEYS_FILE.read_text(encoding="utf-8")
+                keys = extract_keys_from_noise(content)
+            except Exception:
+                pass
+        if self.include_env:
+            env_key = os.environ.get("GROQ_API_KEY", "").strip()
+            if env_key and env_key != "your_api_key_here":
+                keys.extend(extract_keys_from_noise(env_key))
+        self.keys = list(dict.fromkeys(keys))
+        self._load_state()
+
+    def save_keys(self):
+        try:
+            HOME.mkdir(parents=True, exist_ok=True)
+            tmp = KEYS_FILE.with_suffix(".tmp")
+            tmp.write_text("\n".join(self.keys) + "\n" if self.keys else "", encoding="utf-8")
+            os.chmod(tmp, 0o600)
+            tmp.replace(KEYS_FILE)
+        except Exception:
+            pass
+
+    def add_keys(self, new_keys: list[str]) -> tuple[int, int]:
+        before = len(self.keys)
+        valid_incoming = [k for k in new_keys if k.startswith("gsk_") and len(k) >= 20]
+        self.keys = list(dict.fromkeys(self.keys + valid_incoming))
+        self.save_keys()
+        self._load_state()
+        return len(self.keys) - before, len(self.keys)
+
+    def remove_key_by_id(self, key_id: str) -> bool:
+        target_idx = None
+        for idx, k in enumerate(self.keys):
+            if self._id(k) == key_id or self._mask(k) == key_id or k == key_id:
+                target_idx = idx
+                break
+        if target_idx is not None:
+            removed = self.keys.pop(target_idx)
+            kid = self._id(removed)
+            self.state.get("cooldown", {}).pop(f"{kid}:*", None)
+            for k in list(self.state.get("cooldown", {}).keys()):
+                if k.startswith(kid + ":"):
+                    self.state["cooldown"].pop(k, None)
+            if self.state.get("current") == kid:
+                self.state["current"] = self._id(self.keys[0]) if self.keys else None
+            self.save_keys()
+            self._save_state()
+            return True
+        return False
+
+    def remove_key_by_index(self, index: int) -> bool:
+        if 1 <= index <= len(self.keys):
+            return self.remove_key_by_id(self._id(self.keys[index - 1]))
+        return False
+
+    def clear(self):
+        self.keys = []
+        self.save_keys()
+        self.state = {"current": None, "cooldown": {}}
+        self._save_state()
 
     def _load_state(self):
-        try:
-            data = json.loads(STATE_FILE.read_text())
-        except (OSError, ValueError):
-            data = {}
-        return {
-            "current": data.get("current"),
-            "cooldown": data.get("cooldown", {}),
-        }
+        if STATE_FILE.exists():
+            try:
+                data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+                self.state = {
+                    "current": data.get("current"),
+                    "cooldown": data.get("cooldown", {}),
+                }
+            except Exception:
+                self.state = {"current": None, "cooldown": {}}
+        else:
+            self.state = {"current": None, "cooldown": {}}
+        valid_ids = [self._id(k) for k in self.keys]
+        if not self.keys:
+            self.state["current"] = None
+        elif self.state.get("current") not in valid_ids:
+            self.state["current"] = valid_ids[0]
 
     def _save_state(self):
         try:
+            HOME.mkdir(parents=True, exist_ok=True)
             tmp = STATE_FILE.with_suffix(".tmp")
-            tmp.write_text(json.dumps(self.state))
+            tmp.write_text(json.dumps(self.state), encoding="utf-8")
             os.chmod(tmp, 0o600)
             tmp.replace(STATE_FILE)
-        except OSError:
+        except Exception:
             pass
 
-    # ----- key selection -----
-    def _ordered(self):
+    def _ordered(self) -> list[str]:
+        if not self.keys:
+            return []
         ids = [self._id(k) for k in self.keys]
-        current = self.state.get("current")
-        start = ids.index(current) if current in ids else 0
+        curr = self.state.get("current")
+        start = ids.index(curr) if curr in ids else 0
         return self.keys[start:] + self.keys[:start]
 
-    def _wait_for(self, key, model):
-        """Seconds until this key may be used for this model again."""
+    def _wait_for(self, key: str, model: str) -> float:
         kid = self._id(key)
         now = time.time()
-        cooldown = self.state["cooldown"]
+        cooldown = self.state.get("cooldown", {})
         until = max(cooldown.get(f"{kid}:*", 0), cooldown.get(f"{kid}:{model}", 0))
         return max(0.0, until - now)
 
-    def _candidates(self, model):
-        return [k for k in self._ordered() if self._wait_for(k, model) <= 0]
+    def candidates(self, model: str, strict: bool = False) -> list[str]:
+        if not self.keys:
+            return []
+        ordered = self._ordered()
+        ready = [k for k in ordered if self._wait_for(k, model) <= 0]
+        if strict:
+            return ready
+        return ready if ready else ordered
 
-    def _cool(self, key, model, exc):
+    def cool(self, key: str, model: str, exc: Exception):
         kid = self._id(key)
         if isinstance(exc, (AuthenticationError, PermissionDeniedError)):
             scope, seconds = "*", REJECTED_COOLDOWN
@@ -131,12 +206,15 @@ class KeyPool:
             scope, seconds = model, DEFAULT_RATE_COOLDOWN
             try:
                 seconds = float(exc.response.headers.get("retry-after"))
-            except (AttributeError, TypeError, ValueError):
+            except Exception:
                 pass
             seconds = max(seconds, 5.0)
-        self.state["cooldown"][f"{kid}:{scope}"] = time.time() + seconds
+        self.state.setdefault("cooldown", {})[f"{kid}:{scope}"] = time.time() + seconds
+        other = [k for k in self.keys if k != key]
+        if other:
+            self.state["current"] = self._id(other[0])
         self._save_state()
-        if not self.quiet:
+        if not self.quiet and key in self.keys:
             index = self.keys.index(key) + 1
             reason = "rejected" if scope == "*" else f"rate limited on {model}"
             print(
@@ -144,16 +222,73 @@ class KeyPool:
                 file=sys.stderr,
             )
 
-    def _good(self, key, model):
+    def good(self, key: str, model: str):
         kid = self._id(key)
         changed = self.state.get("current") != kid
         self.state["current"] = kid
-        if self.state["cooldown"].pop(f"{kid}:{model}", None) is not None:
+        if self.state.setdefault("cooldown", {}).pop(f"{kid}:{model}", None) is not None:
             changed = True
         if changed:
             self._save_state()
 
-    def _exhausted(self, model):
+    def reset(self):
+        self.state["cooldown"] = {}
+        if self.keys:
+            self.state["current"] = self._id(self.keys[0])
+        self._save_state()
+
+    def status_rich(self) -> list[dict]:
+        now = time.time()
+        items = []
+        curr = self.state.get("current")
+        for index, key in enumerate(self.keys, start=1):
+            kid = self._id(key)
+            is_active = kid == curr
+            cooldowns = []
+            for name, until in self.state.get("cooldown", {}).items():
+                if not name.startswith(kid + ":") or until <= now:
+                    continue
+                scope = name.split(":", 1)[1]
+                wait = int(until - now)
+                cooldowns.append({"scope": scope, "seconds_left": wait})
+
+            if cooldowns:
+                state_type = "cooling"
+                status_text = f"Cooling ({cooldowns[0]['scope']}, {cooldowns[0]['seconds_left']}s)"
+            elif is_active:
+                state_type = "active"
+                status_text = "Active (Primary)"
+            else:
+                state_type = "ready"
+                status_text = "Ready (Failover Pool)"
+
+            items.append({
+                "index": index,
+                "id": kid,
+                "masked": self._mask(key),
+                "status": status_text,
+                "state_type": state_type,
+                "is_active": is_active,
+                "cooldowns": cooldowns,
+            })
+        return items
+
+    def status_legacy(self) -> list[tuple[int, str, str]]:
+        return [(item["index"], item["masked"], item["status"]) for item in self.status_rich()]
+
+
+class KeyPool(DynamicKeyPool):
+    """CLI-compatible wrapper around `DynamicKeyPool` (raises on empty pool, strict cooldowns)."""
+
+    def __init__(self, quiet: bool = False):
+        super().__init__(quiet=quiet, include_env=True)
+        if not self.keys:
+            raise RuntimeError(
+                "No Groq API keys found. Add them to ~/.groq/keys.txt "
+                "or set GROQ_API_KEY in ~/.groq/.env."
+            )
+
+    def _exhausted(self, model: str) -> AllKeysExhausted:
         soonest = min(self._wait_for(k, model) for k in self.keys)
         return AllKeysExhausted(
             f"All {len(self.keys)} Groq API keys are exhausted or rejected. "
@@ -161,32 +296,26 @@ class KeyPool:
             "Run groq-cli --status for details."
         )
 
-    # ----- public API -----
     def complete(self, messages, model=None, **kwargs):
-        """Non streaming chat completion with automatic key fallback."""
+        """Non-streaming chat completion with automatic key fallback."""
         model = model or DEFAULT_MODEL
-        for key in self._candidates(model):
+        for key in self.candidates(model, strict=True):
             client = Groq(api_key=key, max_retries=0)
             try:
                 response = client.chat.completions.create(
                     model=model, messages=messages, **kwargs
                 )
             except ROTATE_ON as exc:
-                self._cool(key, model, exc)
+                self.cool(key, model, exc)
                 continue
-            self._good(key, model)
+            self.good(key, model)
             return response
         raise self._exhausted(model)
 
     def stream(self, messages, model=None, **kwargs):
-        """Streaming chat completion. Yields chunks.
-
-        Switching keys is only possible before the first chunk arrives. If a
-        key fails halfway through a reply, the error is raised instead, so the
-        output is never duplicated.
-        """
+        """Streaming chat completion. Yields chunks; rotates only before first chunk."""
         model = model or DEFAULT_MODEL
-        for key in self._candidates(model):
+        for key in self.candidates(model, strict=True):
             client = Groq(api_key=key, max_retries=0)
             started = False
             try:
@@ -199,9 +328,9 @@ class KeyPool:
             except ROTATE_ON as exc:
                 if started:
                     raise
-                self._cool(key, model, exc)
+                self.cool(key, model, exc)
                 continue
-            self._good(key, model)
+            self.good(key, model)
             return
         raise self._exhausted(model)
 
@@ -212,7 +341,7 @@ class KeyPool:
         for index, key in enumerate(self.keys, start=1):
             kid = self._id(key)
             notes = []
-            for name, until in self.state["cooldown"].items():
+            for name, until in self.state.get("cooldown", {}).items():
                 if not name.startswith(kid + ":") or until <= now:
                     continue
                 scope = name.split(":", 1)[1]
@@ -225,8 +354,3 @@ class KeyPool:
                 notes.append("ready (current)")
             rows.append((index, self._mask(key), "; ".join(notes) or "ready"))
         return rows
-
-    def reset(self):
-        """Forget all cooldowns."""
-        self.state["cooldown"] = {}
-        self._save_state()

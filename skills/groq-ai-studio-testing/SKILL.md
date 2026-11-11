@@ -23,7 +23,7 @@ What this script does automatically:
 1. Uses `osascript` to open and activate macOS **Terminal.app** right in front of the user's eyes.
 2. Runs `./install.sh` and restarts Queen (`qwen_app/app.py`) on port 8765.
 3. Calls `POST /api/terminal/log` to print a live banner in Queen's server console.
-4. Calls `POST /api/test/live` (Queen's built-in Python server self-test backdoor), which runs all 9 non-destructive checks and prints colorized `$ command` + `✓ PASS` / `✗ FAIL` lines in **both** the Terminal window and Queen's server log.
+4. Calls `POST /api/test/live` (Queen's built-in Python server self-test backdoor), which runs all 13 non-destructive checks and prints colorized `$ command` + `✓ PASS` / `✗ FAIL` lines in **both** the Terminal window and Queen's server log.
 5. Sends a live verification prompt via `POST /api/remote/send` asking Queen to confirm her self-update pipeline awareness (visible live in both the browser UI and Terminal).
 6. Tees the complete output to `/tmp/queen_visible_test.log` and waits for completion so the agent can verify exit code `0`.
 
@@ -344,17 +344,24 @@ echo "Results: $PASS passed, $FAIL failed"
 | 6 | `_auto_title()` works — saved chat with empty title got auto-titled "What is 2+2?" from first user message | **Verified** ✓ |
 | 7 | Queen answered "No, I do not have the ability to self-update" when `system_prompt` was empty in browser | **Fixed** — added `build_queen_system_prompt()` in `app.py` so `/api/chat` and `/api/remote/send` always inject Queen's identity, version, repos, and CI self-update instructions |
 | 8 | Python 3.10 f-string in `run_visible_tests.sh` rejected backslashes inside `{...}` | **Fixed** — extracted dict lookups to variables before printing |
+| 9 | Streaming token counts looked inflated (~2,600 tok for short turns) because `chunk.x_groq.usage` was ignored | **Fixed** — `_extract_chunk_usage()` reads `x_groq.usage` + `reasoning_tokens` |
+| 10 | Stop button (`btn-send.stop`) was disabled (`btnSend.disabled = true`) while streaming | **Fixed** — kept enabled during `isBusy` and wired to `abortCtrl.abort()` |
 
-## Test Results (11 Nov 2026, v2 — Visible Terminal Run)
+## Test Results (11 Nov 2026, v3 — Visible Terminal Run)
 
 | Test | Result | Notes |
 |------|--------|-------|
-| 1. Health check | ✓ PASS | `{"ok":true,"version":"v2"}` |
-| 2. Version endpoint | ✓ PASS | Returns `v2`, `auto_update_repo=markoboskoauroville/groq-auto-update` |
+| 1. Health check | ✓ PASS | `{"ok":true,"version":"v3"}` |
+| 2. Version endpoint | ✓ PASS | Returns `v3`, `auto_update_repo=markoboskoauroville/groq-auto-update` |
 | 3. CI reject (bad Python) | ✓ PASS | HTTP 422, 2 CI errors (syntax + size) |
 | 4. CI reject (bad HTML) | ✓ PASS | HTTP 422, 4 CI errors (missing `</html>`, tag balance, title, size) |
 | 5. Allowlist enforcement | ✓ PASS | HTTP 403 for `evil.py` |
 | 6. Status + backups | ✓ PASS | HTTP 200, `staged=0`, backups listed |
-| 7. Successful self-update | ✓ PASS | CI passed, v1→v2, git pushed to both repos |
-| 8. Chat CRUD | ✓ PASS | save, auto-title (`Live self-test ping`), rename (`Renamed Self-Test`), delete→HTTP 404 |
-| 9. System prompt awareness | ✓ PASS | `build_queen_system_prompt()` (1,746 chars) verified + live `/api/remote/send` confirmed Queen explains her CI self-update pipeline |
+| 7. Chat CRUD | ✓ PASS | save, auto-title (`Live self-test ping`), rename (`Renamed Self-Test`), delete→HTTP 404 |
+| 8. Key pool status | ✓ PASS | Unified `groq_pool.py` (`DynamicKeyPool` + `KeyPool`), masked keys returned |
+| 9. System prompt awareness | ✓ PASS | `build_queen_system_prompt()` (2,085 chars) includes Self-Update, Star Menu, Voice Engine, Elevate Media |
+| 10. Local API Origin/CSRF guard | ✓ PASS | Evil `Origin` blocked with HTTP 403; valid `X-Queen-Token` allowed with HTTP 200 |
+| 11. Star Menu & Startup proxy | ✓ PASS | `GET /api/star/startup` → HTTP 200, 11 folders, `star_api_online=True` |
+| 12. Voice Engine status proxy | ✓ PASS | `GET /api/voice/speaking` → HTTP 200, `voice_online=True` |
+| 13. Elevate Media hub & allowlist | ✓ PASS | `GET /api/elevate/board` (4 projects), `/api/elevate/whatsapp` (5 msgs), evil Resolve tool blocked with HTTP 403 |
+| 14. Backdoor live chat (`v3`) | ✓ PASS | Queen summarized her v3 Self-Update, Star Menu, Voice Engine, and Elevate Media suite (`729 in / 71 out`, `157.6 tok/s`, `$0.000867`) |
