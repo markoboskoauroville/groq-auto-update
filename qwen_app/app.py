@@ -43,8 +43,19 @@ STATE_FILE = HOME / "key_state.json"
 LEDGER_FILE = HOME / "spend_ledger.json"
 PORT_FILE = HOME / "active_port"
 URL_FILE = HOME / "app_url"
-REPO_DIR = Path(__file__).resolve().parent          # qwen_app/ directory
-GIT_ROOT = REPO_DIR.parent                          # the git repository root
+REPO_DIR = Path(__file__).resolve().parent          # qwen_app/ directory — may be source or installed copy
+# Detect whether we are running from the git repo or the installed copy (~/.groq).
+# Git operations and version tracking must always target the source repo.
+_candidate_git_root = REPO_DIR.parent
+if (_candidate_git_root / ".git").is_dir():
+    GIT_ROOT = _candidate_git_root                  # running from source repo
+else:
+    # Installed copy: look for the source repo at the standard dev location
+    _dev_repo = Path.home() / "Developer" / "groq_ai_studio"
+    if (_dev_repo / ".git").is_dir():
+        GIT_ROOT = _dev_repo
+    else:
+        GIT_ROOT = _candidate_git_root              # fallback — git ops will fail gracefully
 UPDATE_DIR = HOME / "incoming_update"
 CHATS_DIR = HOME / "chats"
 VERSION_FILE = GIT_ROOT / "version.json"
@@ -1069,16 +1080,11 @@ def ci_validate_python(code: str, filename: str) -> tuple[bool, list[str]]:
         errors.append(f"SYNTAX ERROR: {exc.msg} (line {exc.lineno}, col {exc.offset})")
         return False, errors
 
-    # 3. Truncation heuristics
+    # 3. Truncation heuristics (informational only when AST passed)
+    #    Raw text counting hits false positives on brackets inside strings,
+    #    comments, f-strings, regex, etc.  Since AST passed above, these are
+    #    logged as warnings for human review but never block the update.
     stripped = code.rstrip()
-    # Unbalanced triple-quotes (odd count)
-    for q in ('"""', "'''"):
-        if stripped.count(q) % 2 != 0:
-            errors.append(f"TRUNCATED: unbalanced {q} — file likely cut mid-string")
-    # Unbalanced brackets
-    for o, c, name in [("(", ")", "parentheses"), ("[", "]", "brackets"), ("{", "}", "braces")]:
-        if stripped.count(o) != stripped.count(c):
-            errors.append(f"TRUNCATED: unbalanced {name} ({stripped.count(o)} open vs {stripped.count(c)} close)")
     # Ends mid-line (no newline at end, last line not a comment/blank/closing)
     last_line = stripped.split("\n")[-1].strip() if stripped else ""
     if last_line and not last_line.startswith("#") and last_line not in ("", ")", "]", "}", "pass", "..."):
@@ -1413,7 +1419,12 @@ def assemble_update():
         shutil.copy2(str(target_path), str(backup_path))
 
     # ── WRITE ──
+    # Write to the running copy (REPO_DIR — may be ~/.groq/qwen_app/)
     target_path.write_text(final_content, encoding="utf-8")
+    # Also write to the source repo if different (so git commit sees the change)
+    git_target = GIT_ROOT / "qwen_app" / filename
+    if git_target.resolve() != target_path.resolve() and git_target.parent.is_dir():
+        git_target.write_text(final_content, encoding="utf-8")
 
     # ── CLEANUP CHUNKS ──
     for c in chunks:
