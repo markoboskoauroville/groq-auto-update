@@ -349,3 +349,11 @@ chat command (first in the local chain, darwin only, $0): "reduce the output vol
 Skill `queen_skills/system-volume.md`. Tested in her chat: volume read back 10, ADAM Audio D3V still default.
 
 **14.11.2026, v4: the icon.** Marko: "please give Groq queen icon, as we always have icons". Default look for an unpromoted app (six-letter-icon.md): black, GRO / QUE in white, a cursor arrow behind. Row `groqqueen` in STAR_SWIFT/icons6/icons.json (category Between Marko and Claude); the picture is `mac_app/icon/six_1024.png`; build.sh makes AppIcon.icns with sips + iconutil and sets CFBundleIconFile. Compiled only by GitHub (release v4).
+
+**15.11.2026: camera, Second Take and phone voice phrases (Marko: "everything we are doing please teach the queen").** All $0, local chat commands:
+- `qwen_app/sony_camera.py`: "refresh the camera" / "reconnect the camera" = `sonycam connect` then `sonycam status`; "imaging edge big" / "camera full screen" / "show me on the BenQ" = `sonycam big` (Remote maximized on the BenQ, v27); "camera status" = `sonycam status`. Skill `queen_skills/sony-camera.md`.
+- `qwen_app/second_take.py`: short phrases while Second Take runs: "record", "keep", "again" (POST /shoot/action), "stop" (existing branch), "watch shot N" (POST /shoot/action watch). Refused while recording. Skill `queen_skills/second-take.md`.
+- `qwen_app/phone_say.py` (new, wired in app.py before system_settings): "say on the pixel <text>" / "speak on the pixel <text>" / "send to the pixel <text>" = `phonesay pixel en "<text>"`; "phone status" = `phonesay status`. Skill `queen_skills/phone-voice.md` (new).
+- Tested in her chat through `/api/internal/local_command`: "camera status" (connected, STBY), "second take status" (v27, not recording), "phone status" (both phones answer). Routing of the rest checked with the hands mocked.
+- Test slip: "watch shot 3" was sent for real and played shot 3's source clips; ended with "stop second take" (no camera recording).
+- Queen's backend on 8766 was restarted by hand (env cleaned of Claude session variables). Her model answers through `/api/remote/send` do not run local commands: use `/api/internal/local_command` to test phrases at $0.

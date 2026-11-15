@@ -20,9 +20,15 @@ def chat_sony_command(text):
     if len(t) > 120:
         return None
     cam = re.search(r"\b(camera|sony|alpha|a7|imaging edge)\b", low)
-    if not cam and not re.search(r"\bopen (imaging edge )?remote\b", low):
+    if not cam and not re.search(r"\bopen (imaging edge )?remote\b|\bshow me on the benq\b", low):
         return None
     try:
+        # 15.11.2026: "refresh/reconnect the camera" = connect (opens Imaging Edge's connect dialog), then status
+        if cam and re.search(r"\b(refresh|reconnect)\b", low) and not re.search(r"\b(start|stop)\b", low):
+            return _run("connect") + "\n" + _run("status")
+        # v27: Remote maximized on the BenQ (not macOS full screen), for recording
+        if re.search(r"\bimaging edge\b.*\b(big|full|benq)\b|\bcamera (full screen|fullscreen|big)\b|\bshow me on the benq\b|\bon the benq\b.*\b(camera|sony|imaging edge)\b", low):
+            return _run("big")
         if re.search(r"\b(connect|open|pair)\b.*\b(camera|sony|imaging edge( remote)?|remote)\b|\bimaging edge remote\b", low) and not re.search(r"\b(start|stop)\b", low):
             return _run("connect")
         if re.search(r"\b(start|begin|press|hit)\b.*\b(camera|sony)?.*\b(record|recording|rec)\b|\brecord\b.*\b(on )?(the )?(camera|sony)\b", low) and re.search(r"camera|sony", low) and not re.search(r"\bstop\b", low):

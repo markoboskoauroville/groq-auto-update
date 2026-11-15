@@ -43,9 +43,34 @@ def chat_second_take_command(text):
     if sys.platform != "darwin":
         return None
     t = (text or "").strip(); low = t.lower()
-    if len(t) > 120 or not re.search(r"\bsecond[- ]?take\b|\bnext (exercise|shot)\b", low):
+    if len(t) > 120:
+        return None
+    named = re.search(r"\bsecond[- ]?take\b|\bnext (exercise|shot)\b", low)
+    watch = re.search(r"\bwatch shot (\d+)\b", low)
+    bare = low.strip(" .!?") if low.strip(" .!?") in ("record", "keep", "again", "stop") else None
+    if not (named or watch or bare):
         return None
     s = _up()
+    # 15.11.2026: short phrases act only while Second Take is running ("record", "keep", "again", "stop", "watch shot N")
+    if s is None and not named:
+        return None
+    if s is not None and (watch or bare):
+        try:
+            if watch:
+                n = int(watch.group(1))
+                _call("POST", "/shoot/action", {"action": "watch", "shot": n})
+                time.sleep(1)
+                return f"Watching shot {n}. " + _status_line(_up() or {})
+            if bare == "stop" or bare is None:
+                pass
+            elif s.get("recording") and bare in ("keep", "again", "record"):
+                return f"A take is recording. Say 'stop' first, then '{bare}'."
+            else:
+                _call("POST", "/shoot/action", {"action": bare})
+                time.sleep(2)
+                return f"Done: {bare}. " + _status_line(_up() or {})
+        except Exception as e:
+            return f"Second Take did not answer: {e}"
     if re.search(r"\bstatus\b|\bwhere am i\b|\bis .* recording\b", low):
         return _status_line(s) if s else "Second Take is not running."
     if s is None and re.search(r"\b(start|begin|open)\b", low):

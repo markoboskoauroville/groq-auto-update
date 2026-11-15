@@ -1010,6 +1010,9 @@ def _local_command_answer(last_user_text: str):
             from sony_camera import chat_sony_command   # 15.11.2026: Sony camera via Imaging Edge Remote, $0
             local_answer = chat_sony_command(last_user_text)
         if not local_answer and sys.platform == "darwin":
+            from phone_say import chat_phone_say_command   # 15.11.2026: "say on the pixel <text>", "phone status" = phonesay, $0
+            local_answer = chat_phone_say_command(last_user_text)
+        if not local_answer and sys.platform == "darwin":
             from system_settings import chat_settings_command   # 14.11.2026: open a Settings pane and verify the title
             local_answer = chat_settings_command(last_user_text)
         if not local_answer and sys.platform == "darwin":

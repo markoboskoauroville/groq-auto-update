@@ -209,3 +209,5 @@ Queen said "Done" after a bare `open x-apple.systempreferences:` that landed on 
 15.11.2026, NDI monitor: the source is picked by the menu bar (AX), and the window title only follows a frame, so "confirmed" is honest only for a sending source; Queen says so and points to a screenshot. Restarting: killing the Python backend did not bring it back (the Swift app was not running); started `~/.groq/venv/bin/python qwen_app/app.py 8765` by hand.
 
 - 15.11.2026: Asana Guide builder hand (chat_asana in ops_hands.py, skill asana-guide-sync.md): "asana build status" / "build asana now", $0, local; tested in her chat (status). Bridge: ~/Developer/ASANA_GUIDE/mac/asana_sync.py.
+
+15.11.2026, teaching round: `/api/remote/send` goes to the MODEL, not the local chain. A test of a local phrase there costs about $0.02 per turn and the model invents tool calls it does not have. Test phrases with `/api/internal/local_command` (token in X-Queen-Token). Bare words ("record", "keep", "stop") are answered only while the app they belong to is running, otherwise they fall through to the model.
