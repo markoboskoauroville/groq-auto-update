@@ -142,3 +142,4 @@ release vN Latest here; install `mac_app/install.sh`; never compile on the Mac).
 any app's Accessibility tree as JSON; Queen: `POST /api/ax/read`, chat `ax read <App> [for <words>]`; WhatsApp: `POST /api/whatsapp/ax/latest`,
 chat "check my last 5 WhatsApp messages" (who wrote, NOT answered; no screenshot). Skills accessibility.md, whatsapp-accessibility.md.
 Cheap status for apps: `GET /api/app/status`. Private code repos cannot build (billing): code repos are public.
+- 15.11.2026: teaching round: camera refresh/big phrases (sony_camera.py), Second Take short phrases (record/keep/again/stop/watch shot N), phone speech (qwen_app/phone_say.py, queen_skills/phone-voice.md). Pushed 4ab1e39. Test phrases through /api/internal/local_command, not /api/remote/send (that one calls the model).
