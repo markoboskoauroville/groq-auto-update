@@ -535,47 +535,26 @@ def deploy(repo, chat):
     return {"repo": d.name, "deployed": True, "live": urls[-1] if urls else None}
 
 
-PHONES = {"pixel": "100.70.23.53:5555", "nothing": "100.67.149.40:5555"}
-ENGINE = "community.auroville.voiceengine"
+PHONES = {"pixel": "100.70.23.53", "nothing": "100.67.149.40"}   # Tailscale addresses; the voice daemon listens on :8840
 
 
 def say_on_phone(phone, text):
-    """Marko, 13.11.2026: "I don't want silent notification. I want voice engine. I have it here. If I don't have it, look at
-    Nothing phone and copy the engine here." Only TEXT travels (MANTRA_MANIFEST voice-text-only.md): the phone's own Voice
-    Engine speaks it with Speechify (POST /say on 8720). A phone without the engine gets it copied from the Nothing first."""
+    """Marko, 13.11.2026: "I don't want silent notification. I want voice engine." Since 15.11.2026 the ONE voice engine on the
+    phones is TERMUX_VOICE (repo TERMUX_VOICE, voiced.py in Termux, port 8840); the old Android app Voice Engine (:8720) is
+    retired. Only TEXT travels: POST /say {text, lang, from}; the phone renders (Speechify) and speaks it, one voice at a time,
+    and its top notification names the sender. Same as the Mac command `phonesay <phone> "text"`."""
     phone = best_name(phone, list(PHONES))
-    dev = PHONES[phone]
-    _run([ADB, "connect", dev], timeout=20)
-    _, pk = _run([ADB, "-s", dev, "shell", "pm", "path", ENGINE], timeout=20)
-    copied = ""
-    if "package:" not in pk:                                   # copy the engine from the Nothing
-        src = PHONES["nothing"]
-        _run([ADB, "connect", src], timeout=20)
-        _, sp = _run([ADB, "-s", src, "shell", "pm", "path", ENGINE], timeout=20)
-        paths = [l.split(":", 1)[1].strip() for l in sp.splitlines() if l.startswith("package:")]
-        if not paths:
-            raise SkillError("the Voice Engine is on neither phone")
-        tmp = Path(tempfile.mkdtemp(prefix="queen-engine-"))
-        local = []
-        for i, p in enumerate(paths):
-            _run([ADB, "-s", src, "pull", p, str(tmp / f"{i}.apk")], timeout=120)
-            local.append(str(tmp / f"{i}.apk"))
-        code, out = _run([ADB, "-s", dev, "install-multiple", "-r", *local], timeout=300)
-        shutil.rmtree(tmp, ignore_errors=True)
-        if "Success" not in out:
-            raise SkillError(f"copying the engine failed: {out[-200:]}")
-        _run([ADB, "-s", dev, "shell", "monkey", "-p", ENGINE, "-c", "android.intent.category.LAUNCHER", "1"])
-        time.sleep(4)
-        copied = " (the Voice Engine was copied from the Nothing first)"
-    port = "18720" if phone == "pixel" else "18721"
-    _run([ADB, "-s", dev, "forward", f"tcp:{port}", "tcp:8720"])
-    req = urllib.request.Request(f"http://127.0.0.1:{port}/say", data=json.dumps({"text": text}).encode(),
+    ip = PHONES[phone]
+    req = urllib.request.Request(f"http://{ip}:8840/say", data=json.dumps({"text": text, "lang": "en", "from": "Mac \u00b7 Queen"}).encode(),
                                  headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        d = json.load(r)
+    try:
+        with urllib.request.urlopen(req, timeout=8) as r:
+            d = json.load(r)
+    except Exception as exc:
+        raise SkillError(f"the {phone}'s voice daemon (voiced :8840 in Termux) does not answer: {exc}. Termux must be open or Termux:Boot armed.")
     if not d.get("ok"):
-        raise SkillError(f"the phone's engine said: {d}")
-    return f"Spoken on the {phone} by its Voice Engine ({d.get('voice')}, subtitles {d.get('subtitles')}){copied}."
+        raise SkillError(f"the phone's voice daemon said: {d}")
+    return f"Spoken on the {phone} by its voice daemon (TERMUX_VOICE, queued {d.get('queued')})."
 
 
 # ---------- chat ----------

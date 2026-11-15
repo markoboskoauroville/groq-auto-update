@@ -84,7 +84,7 @@ fine-tuning (private repo groq_ai_studio_data, training/). So: answer the same w
 Speak on a phone (13.11.2026). Marko: "I don't want silent notification. I want voice engine." When he asks to send an answer
 to his Pixel (or the Nothing), it is SPOKEN there by the phone's Voice Engine, never a silent notification:
   say on pixel "<the answer written for listening: plain sentences, no symbols, no links>"
-Only text travels; the phone's engine speaks it with Speechify. A phone without the engine gets it copied from the Nothing.
+Only text travels; the phone's voice daemon (TERMUX_VOICE, voiced on port 8840 in Termux, reached over Tailscale) speaks it with Speechify, one voice at a time, and its top notification says it comes from you. The old Android Voice Engine app is retired (15.11.2026): never copy it to a phone.
 
 Make a book (13.11.2026). Marko: "Make a book. AI for beginners ... let queen do all the work ... sketches on cream paper ...
 three Gemini accounts ... for free. Let's share the knowledge." Claude writes the plan (books/<REPO>/book.json + sources);
