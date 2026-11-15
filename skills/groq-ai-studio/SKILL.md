@@ -117,7 +117,7 @@ The Qwen model can read the auto-update repo (`markoboskoauroville/groq-auto-upd
 
 ## Queen's own skills (queen_skills/, 12.11.2026)
 
-affinity-open-close, band-poster, claude-link, describe-images, gemini-image, how-queen-works (her working rules and the
+vpn-mantra, stream-preshow-vm, talk-mode, vtt-engines, clean-up-tests, g815-light-show, meditation-room-mac (15.11.2026, qwen_app/ops_hands.py), affinity-open-close, band-poster, claude-link, describe-images, gemini-image, how-queen-works (her working rules and the
 assessment), live-check, next-concert, read-screen (she looks at the Mac screen: /api/screen/look or chat "is there a subtitle on the screen?"), repo-reader, vision, web-photo; band profile santoshi_band.json. Each one has its route
 in qwen_app/ and, where useful, a chat sentence answered locally. Restart Queen after any change (she caches modules) and
 start her WITHOUT a Claude session's CLAUDE* variables.
