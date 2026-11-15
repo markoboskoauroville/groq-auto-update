@@ -1,0 +1,4 @@
+When: Marko says "play my first take", "play the first take of the frame drum lesson", "is the second take ready", "ready check for the second take".
+Rule (15.11.2026): read-only, costs nothing, no credits. Never record, never press REC, never play sound without his word.
+Ready check: run `~/Developer/MPA_LESSONS_ANALYZER/tools/second_take_ready` and say each line in plain words (camera connected/STBY, battery label, input, disk, first take file). A battery label of 0% means: ask Marko to put a charged battery in the Sony.
+Play first take: his first take is `~/Downloads/MPA Academy Classroom 12.11.2026.mp4` (the lesson recording; Second Take's lastVideo). Dry run first: `second_take_ready --play-dry` says what would open. Only on his explicit "play" does the plan open it in QuickTime on the MacBook screen and press play, via Macro Recorder (macroskill has "play first take"); it is already open paused at 0:00 after the preparation of 15.11.2026.
