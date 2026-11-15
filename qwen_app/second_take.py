@@ -1,6 +1,6 @@
 """Second Take (MPA Lessons Analyzer (Mantra) v23+, 15.11.2026): local chat commands, $0, no model.
 The hand is the app's own loopback API http://127.0.0.1:8965 (port in ~/.mantra/ports/mpa-lessons-analyzer).
-Since v23 RECORD/STOP start and stop the Sony on its card through Imaging Edge Remote (sonycam)."""
+Since v23 RECORD/STOP start and stop the Sony on its card through Imaging Edge Remote (sonycam); since v26 the real Remote is flipped to the front for a take and away after it (sonycam front/away, Rectangle, never full screen)."""
 import json, os, re, subprocess, sys, time, urllib.request
 
 APP = "/Applications/MPA Lessons Analyzer (Mantra).app"
@@ -71,7 +71,7 @@ def chat_second_take_command(text):
             r = _call("POST", "/shoot/start")
             _call("POST", "/live", {"shot": r.get("current")})
             time.sleep(3)
-            return f"Second Take is ready on shot {r.get('current')}: the camera picture is full screen. Press RECORD (or say record) when you are ready. " + _status_line(_up() or {})
+            return f"Second Take is ready on shot {r.get('current')}: Imaging Edge Remote is in front on the MacBook screen. Press its red record button when you are ready; Second Take follows and comes back after the take. " + _status_line(_up() or {})
     except Exception as e:
         return f"Second Take did not answer: {e}"
     return None
