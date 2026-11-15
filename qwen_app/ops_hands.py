@@ -157,6 +157,9 @@ def _tm_running():
 
 def _tm_summary():
     s = _tm()
+    if s.get("plain"):      # v12: Talk Mode's own plain sentence from Marko's side
+        return (f"{s['plain']} (Talk Mode {'on' if s.get('on') else 'off'}, sends {s.get('mode', '?')}, talking to {s.get('target', '?')}"
+                f" on {s.get('target_device', '?')}; Space Mode {'ON' if s.get('space_mode') else 'off'}.)")
     return (f"Talk Mode is {'ON' if s.get('on') else 'OFF (typing mode)'}, sends {s.get('mode', '?')}, "
             f"state {s.get('state', '?')}, talking to {s.get('target', '?')} ({s.get('target_device', '?')}); "
             f"Space Mode {'ON' if s.get('space_mode') else 'off'}.")

@@ -8,3 +8,5 @@ only when the mode differs, then read it back from state.json. "space mode test"
 `talkmode://space-off` ends it. **Space Mode is never turned on** by Queen without the 10 s test URL (it switches off his keyboard and mouse).
 **Check:** the summary line from state.json (ON/OFF, AUTO/MANUAL, target session, Space Mode). **Traps:** Space Mode needs Accessibility for Talk Mode; on 15.11.2026 it was MISSING (window shows
 "Space Mode needs Accessibility ..."), so the test cannot run until Marko grants it; the TALK MODE and SPACE MODE checkboxes could be pressed the same way but on/off by URL is cleaner.
+
+**v12 (15.11.2026):** "talk mode status" answers state.json `plain` (one sentence in Marko's words: LISTENING, "Voice to Text (Vox) is recording; I wait", "You are recording with Talk Mode" ...) plus on/off, AUTO/MANUAL, target, Space Mode. The word PAUSED no longer exists; never say "paused" for a recording.
