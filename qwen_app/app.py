@@ -992,6 +992,9 @@ def _local_command_answer(last_user_text: str):
         if sys.platform == "darwin":
             from system_volume import chat_volume_command   # 14.11.2026: Mac output volume, $0, before anything else
             local_answer = chat_volume_command(last_user_text)
+        if not local_answer:
+            from router_mode import chat_router_command   # 15.11.2026: house router state / switch (confirm first), $0
+            local_answer = chat_router_command(last_user_text)
         if not local_answer and sys.platform == "darwin":
             from ndi_monitor import chat_ndi_command   # 15.11.2026: pick the source in NDI Video Monitor, $0
             local_answer = chat_ndi_command(last_user_text)
