@@ -10,3 +10,5 @@ only when the mode differs, then read it back from state.json. "space mode test"
 "Space Mode needs Accessibility ..."), so the test cannot run until Marko grants it; the TALK MODE and SPACE MODE checkboxes could be pressed the same way but on/off by URL is cleaner.
 
 **v12 (15.11.2026):** "talk mode status" answers state.json `plain` (one sentence in Marko's words: LISTENING, "Voice to Text (Vox) is recording; I wait", "You are recording with Talk Mode" ...) plus on/off, AUTO/MANUAL, target, Space Mode. The word PAUSED no longer exists; never say "paused" for a recording.
+
+**v15 (15.11.2026):** in Space Mode Esc pressed twice (within 1 s) exits it; one Esc while dictating cancels the take (nothing sent). There is no "hold Esc 2 s" any more.
