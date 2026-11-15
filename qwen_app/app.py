@@ -1004,6 +1004,9 @@ def _local_command_answer(last_user_text: str):
             from ndi_monitor import chat_ndi_command   # 15.11.2026: pick the source in NDI Video Monitor, $0
             local_answer = chat_ndi_command(last_user_text)
         if not local_answer and sys.platform == "darwin":
+            from second_take import chat_second_take_command   # 15.11.2026: Second Take v23 (camera by remote), $0
+            local_answer = chat_second_take_command(last_user_text)
+        if not local_answer and sys.platform == "darwin":
             from sony_camera import chat_sony_command   # 15.11.2026: Sony camera via Imaging Edge Remote, $0
             local_answer = chat_sony_command(last_user_text)
         if not local_answer and sys.platform == "darwin":
