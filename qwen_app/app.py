@@ -602,6 +602,8 @@ try:
     _register_gemini_posters(app, pool, record_spend)
     from gemini_skill import register as _register_gemini
     _register_gemini(app)
+    from vm_gemini_skill import register as _register_vm_gemini
+    _register_vm_gemini(app)
     from describe_skill import register as _register_describe
     _register_describe(app, pool, record_spend)
     from supervisor import register as _register_supervisor
