@@ -995,6 +995,9 @@ def _local_command_answer(last_user_text: str):
             from system_volume import chat_volume_command   # 14.11.2026: Mac output volume, $0, before anything else
             local_answer = chat_volume_command(last_user_text)
         if not local_answer:
+            from ops_hands import chat_ops_command   # 15.11.2026: VPN, pre-show/stream, Talk Mode, VTT engines, testclean, G815, Meditation Room; $0
+            local_answer = chat_ops_command(last_user_text)
+        if not local_answer:
             from router_mode import chat_router_command   # 15.11.2026: house router state / switch (confirm first), $0
             local_answer = chat_router_command(last_user_text)
         if not local_answer and sys.platform == "darwin":
