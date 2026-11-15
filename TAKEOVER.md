@@ -2,6 +2,8 @@
 
 # Groq AI Studio: takeover
 
+15.11.2026: `qwen_app/ndi_monitor.py` + `queen_skills/ndi-monitor-source.md`: `GET /api/ndi/sources`, `POST /api/ndi/select {source}` and local chat ("show Meditation Room in the NDI monitor", "switch NDI source to X", "which NDI sources are there") call the macro skills ndi-monitor-list / ndi-monitor-source (MACRO_SKILLS, tool ndimon). Tested through `queen` with a screenshot.
+
 ## 14.11.2026 (night, cloud): PHASE A, the Swift app IS Queen on 8765 (app v5)
 
 Marko: "one Queen only, the Swift app, no Flask server behind it, done in phases." Report: `docs/PHASE_A_REPORT.md`.

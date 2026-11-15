@@ -638,6 +638,13 @@ except Exception as _ax_exc:
 
 
 try:
+    from ndi_monitor import register as _register_ndi
+    _register_ndi(app)
+except Exception as _ndi_exc:
+    print(f"[ndi_monitor] not loaded: {_ndi_exc}")
+
+
+try:
     from system_volume import register as _register_volume
     _register_volume(app)
 except Exception as _vol_exc:
@@ -985,6 +992,9 @@ def _local_command_answer(last_user_text: str):
         if sys.platform == "darwin":
             from system_volume import chat_volume_command   # 14.11.2026: Mac output volume, $0, before anything else
             local_answer = chat_volume_command(last_user_text)
+        if not local_answer and sys.platform == "darwin":
+            from ndi_monitor import chat_ndi_command   # 15.11.2026: pick the source in NDI Video Monitor, $0
+            local_answer = chat_ndi_command(last_user_text)
         if not local_answer and sys.platform == "darwin":
             from system_settings import chat_settings_command   # 14.11.2026: open a Settings pane and verify the title
             local_answer = chat_settings_command(last_user_text)
