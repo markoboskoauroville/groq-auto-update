@@ -207,3 +207,5 @@ Python changes after a release stay outside mac_app/, a code change gets vN+1.
 Queen said "Done" after a bare `open x-apple.systempreferences:` that landed on "Accessibility". Now `/api/system/settings?pane=` (qwen_app/system_settings.py) opens, fronts, reads the window title via System Events and retries once; ok only when the title matches. The title follows the system language here ("Control Centre"), so titles compare with centre = center. Skill: queen_skills/open-settings-pane.md.
 
 15.11.2026, NDI monitor: the source is picked by the menu bar (AX), and the window title only follows a frame, so "confirmed" is honest only for a sending source; Queen says so and points to a screenshot. Restarting: killing the Python backend did not bring it back (the Swift app was not running); started `~/.groq/venv/bin/python qwen_app/app.py 8765` by hand.
+
+- 15.11.2026: Asana Guide builder hand (chat_asana in ops_hands.py, skill asana-guide-sync.md): "asana build status" / "build asana now", $0, local; tested in her chat (status). Bridge: ~/Developer/ASANA_GUIDE/mac/asana_sync.py.

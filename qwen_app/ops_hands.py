@@ -283,6 +283,19 @@ def chat_cleanup(low):
     return None
 
 
+# ---------------------------------------------------------------- 5b. Asana Guide builder (15.11.2026)
+def chat_asana(low):
+    """"asana build status" / "build asana now": the GitHub code mirror + Mac builder of Asana Guide (asana-sync), $0, local."""
+    if re.match(r"^(asana( guide)? build status|status of (the )?asana( guide)? build|did (the )?asana( guide)? build( finish| work)?)$", low):
+        out, rc = _sh(["asana-sync", "status"], 60)
+        return "Asana Guide builder (asana-sync status):\n" + out[-1800:]
+    if re.match(r"^(build asana( guide)? now|asana( guide)? build now)$", low):
+        subprocess.Popen(["asana-sync", "build-now"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=ENV, start_new_session=True)
+        return ("Started: asana-sync build-now (pulls the GitHub code, builds shared + personal, releases to the Drive LATEST folders, "
+                "writes the result to BUILDS.md on GitHub). It takes minutes; ask 'asana build status'. If a build already runs it says so in ~/Library/Logs/asana-sync.log.")
+    return None
+
+
 # ---------------------------------------------------------------- 6. G815 lights
 G = "http://127.0.0.1:8877"
 
@@ -352,7 +365,7 @@ def chat_ops_command(text):
     if not t or len(t) > 160:
         return None
     low = _norm(t)
-    for fn in (chat_vpn, chat_stream, chat_talkmode, chat_engine, chat_cleanup, chat_lights, chat_meditation):
+    for fn in (chat_vpn, chat_stream, chat_talkmode, chat_engine, chat_cleanup, chat_asana, chat_lights, chat_meditation):
         try:
             a = fn(low, t) if fn is chat_meditation else fn(low)
         except Exception as e:
