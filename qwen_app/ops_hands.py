@@ -98,6 +98,46 @@ def chat_tailscale(low):
     return out.strip() or f"tailscale-ensure-up gave no answer (exit {rc})."
 
 
+def _ck_post(name, obj=None):
+    code = ("import Foundation\nDistributedNotificationCenter.default().postNotificationName(NSNotification.Name(%r), object: %s, "
+            "userInfo: nil, deliverImmediately: true)\nRunLoop.current.run(until: Date().addingTimeInterval(0.3))\n"
+            % (name, "nil" if obj is None else '"%s"' % obj)).replace("'", '"')
+    return _sh(["/usr/bin/swift", "-e", code], 60)
+
+
+def _ck_state():
+    sup = os.path.expanduser("~/Library/Application Support/connection-keeper")
+    def rd(n):
+        try:
+            return open(os.path.join(sup, n)).read().strip()
+        except OSError:
+            return "?"
+    mode = rd("mode")
+    nothing = rd("nothing-only")
+    try:
+        lines = json.load(open(os.path.join(sup, "aggregate-lines.json")))
+        ls = ", ".join(f"{l.get('name')} ({'standby' if l.get('standby') else 'carrying'})" for l in lines)
+    except Exception:
+        ls = "?"
+    return f"Connection Keeper: mode {'AGGREGATE (BOTH)' if mode == 'aggregate' else 'ONE CONNECTION'}, NOTHING ONLY {nothing}; lines: {ls}."
+
+
+def chat_keeper(low):
+    """16.11.2026 (Marko: "Please use my queen to do the tasks from now on"): Connection Keeper v84's outside doors."""
+    if re.match(r"^(connection )?keeper( status| state)?$|^connection keeper (status|state)$|^is (the )?(connection keeper|keeper) aggregating\??$", low):
+        return _ck_state()
+    m = re.match(r"^(connection )?keeper (wifi|wi-fi|cable|both)$|^(switch|set) (connection )?keeper to (wifi|wi-fi|cable|both)$", low)
+    if m:
+        which = (m.group(2) or m.group(5)).replace("wi-fi", "wifi")
+        _ck_post("ConnectionKeeperChoose", which)
+        time.sleep(4)
+        return f"Asked Connection Keeper for {which.upper()}. " + _ck_state()
+    if re.match(r"^(restart|reload|rerun|re-run) (the )?speed ?test$|^speed ?test restart$", low):
+        _ck_post("ConnectionKeeperSpeedRestart")
+        return "Connection Keeper's speed test restarted (opened if it was closed); GO is pressed by itself."
+    return None
+
+
 # ---------------------------------------------------------------- 2. pre-show / stream on the VM
 def _mr(*a, timeout=60):
     return _sh(["ssh", "-o", "ConnectTimeout=8", "chromium-vm", "mrlinux", *a], timeout)
@@ -378,7 +418,7 @@ def chat_ops_command(text):
     if not t or len(t) > 160:
         return None
     low = _norm(t)
-    for fn in (chat_vpn, chat_tailscale, chat_stream, chat_talkmode, chat_engine, chat_cleanup, chat_asana, chat_lights, chat_meditation):
+    for fn in (chat_vpn, chat_tailscale, chat_keeper, chat_stream, chat_talkmode, chat_engine, chat_cleanup, chat_asana, chat_lights, chat_meditation):
         try:
             a = fn(low, t) if fn is chat_meditation else fn(low)
         except Exception as e:
