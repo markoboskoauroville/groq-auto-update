@@ -642,6 +642,13 @@ except Exception as _ax_exc:
 
 
 try:
+    from whatsapp_desktop import register as _register_wa_desktop   # 16.11.2026: /api/whatsapp/desktop/<verb> (MACRO_SKILLS whatsapp_ui)
+    _register_wa_desktop(app)
+except Exception as _wad_exc:
+    print(f"[whatsapp_desktop] not loaded: {_wad_exc}")
+
+
+try:
     from ndi_monitor import register as _register_ndi
     _register_ndi(app)
 except Exception as _ndi_exc:
@@ -1074,6 +1081,9 @@ def _local_command_answer(last_user_text: str):
         if not local_answer and sys.platform == "darwin":
             from system_settings import chat_settings_command   # 14.11.2026: open a Settings pane and verify the title
             local_answer = chat_settings_command(last_user_text)
+        if not local_answer and sys.platform == "darwin":
+            from whatsapp_desktop import chat_whatsapp_desktop_command   # 16.11.2026: where/unread/open/read/find in WhatsApp Desktop by AX, $0
+            local_answer = chat_whatsapp_desktop_command(last_user_text)
         if not local_answer and sys.platform == "darwin":
             from whatsapp_draft import chat_whatsapp_draft_command   # 16.11.2026: unsent draft in WhatsApp Desktop via Macro Recorder, $0
             local_answer = chat_whatsapp_draft_command(last_user_text)

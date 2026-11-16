@@ -10,13 +10,13 @@ TOOL = os.path.expanduser("~/Developer/MACRO_SKILLS/tools/whatsapp_draft.py")
 def chat_whatsapp_draft_command(text):
     if sys.platform != "darwin":
         return None
-    m = re.match(r"\s*(?:draft|write|type|put)(?: a message| it)? (?:in|into) whatsapp(?: desktop)? to (.+?)\s*:\s*(.+)$", text or "", re.I | re.S)
+    m = re.match(r"\s*(?:draft|write|type|put)(?: a message| it| a whatsapp)?(?: (?:in|into) whatsapp(?: desktop)?)? to (.+?)\s*:\s*(.+)$", text or "", re.I | re.S)
     if not m:
         return None
     chat, body = m.group(1).strip().strip('"'), m.group(2).strip()
     # "Santoshi chat/group" or "<name> group" = the group (--group); a person's name alone = the private chat (16.11.2026)
-    group = bool(re.search(r"\b(group|chat)\b", chat, re.I) and re.search(r"santoshi|group", chat, re.I))
-    chat = re.sub(r"\s+(group|chat)$", "", chat, flags=re.I).strip()
+    from whatsapp_desktop import split_group
+    chat, group = split_group(chat)
     if not chat or not body:
         return "Say the chat and the text: draft in WhatsApp to <chat>: <text>."
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as f:
