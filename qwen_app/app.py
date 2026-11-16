@@ -1075,6 +1075,9 @@ def _local_command_answer(last_user_text: str):
             from system_settings import chat_settings_command   # 14.11.2026: open a Settings pane and verify the title
             local_answer = chat_settings_command(last_user_text)
         if not local_answer and sys.platform == "darwin":
+            from whatsapp_draft import chat_whatsapp_draft_command   # 16.11.2026: unsent draft in WhatsApp Desktop via Macro Recorder, $0
+            local_answer = chat_whatsapp_draft_command(last_user_text)
+        if not local_answer and sys.platform == "darwin":
             from whatsapp_ax import chat_whatsapp_ax_command
             local_answer = chat_whatsapp_ax_command(last_user_text)
         from whatsapp_machine import chat_whatsapp_machine_command
