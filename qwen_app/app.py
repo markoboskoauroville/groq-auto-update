@@ -169,7 +169,7 @@ VERSION = f"v{load_app_version()}"
 AUTO_UPDATE_REPO = "markoboskoauroville/groq-auto-update"
 # Marko, 12.11.2026: "qwen3.6-27b is our default model please don't use anything from open AI. accept Whisper."
 DEFAULT_MODEL = "qwen/qwen3.6-27b"
-# Phase A (14.11.2026): on the Mac the Swift app Groq Queen AI Studio (Mantra) owns 127.0.0.1:8765 and starts this server
+# Phase A (14.11.2026): on the Mac the Swift app Queen owns 127.0.0.1:8765 and starts this server
 # as its internal backend (QWEN_BACKEND=1) on 8766; everything the Swift app does not serve yet is proxied here unchanged.
 # Started any other way (the Linux VM, by hand) it is the whole Queen on 8765, as before. GROQ_PORT / QUEEN_PORT override.
 QWEN_BACKEND = os.environ.get("QWEN_BACKEND", "") in ("1", "true", "yes")
@@ -265,7 +265,7 @@ def build_queen_system_prompt(user_persona: str = "") -> str:
     and Elevate Media architecture prompt.
     """
     base = (
-        f"You are Queen (`qwen`), the AI assistant powering Marko's local Groq AI Studio "
+        f"You are Queen (`qwen`), the AI assistant powering Marko's local Queen app "
         f"(currently running version {VERSION} {_where_i_run()} at http://127.0.0.1:8765).\n"
         f"Your local source repository is `~/Developer/groq_ai_studio` (installed to `~/.groq`), "
         f"and your two core source files are `qwen_app/app.py` (Python/Flask backend) and "
@@ -662,7 +662,7 @@ except Exception as _set_exc:
 
 @app.get("/api/app/status")
 def app_status():
-    """One cheap line for the Swift app (Groq/Queen AI Studio (Mantra)): no network call, ledger and pool only (14.11.2026)."""
+    """One cheap line for the Swift app (Queen): no network call, ledger and pool only (14.11.2026)."""
     ledger = load_ledger()
     try:
         items = pool.status_rich()
@@ -2497,7 +2497,7 @@ def github_read_url():
 @app.get("/")
 def index():
     if QWEN_BACKEND:   # Phase A: the internal backend of the Swift app has no web page
-        return Response("Queen's internal backend (Phase A). Queen is the Swift app Groq Queen AI Studio (Mantra) on "
+        return Response("Queen's internal backend (Phase A). Queen is the Swift app Queen on "
                         "http://127.0.0.1:8765.\n", mimetype="text/plain")
     page = Path(__file__).with_name("index.html").read_text(encoding="utf-8")
     page = (
@@ -3604,7 +3604,7 @@ def raw_keyboard_listener(server, url):
                     break
                 elif ch in ('c', 'C', 'o', 'O'):
                     # 14.11.2026 (Marko: "remove Flask Queen, keep only Swift Queen"): 'c' opens the Swift app, not a tab.
-                    print("\r\n\033[1;36m[c pressed] Opening Groq Queen AI Studio (Mantra)...\033[0m")
+                    print("\r\n\033[1;36m[c pressed] Opening Queen...\033[0m")
                     open_swift_queen()
                 elif ch in ('g', 'G'):
                     print("\r\n\033[1;35m[GitHub] Reading repositories...\033[0m")
@@ -3627,7 +3627,7 @@ def raw_keyboard_listener(server, url):
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
-SWIFT_QUEEN_APP = "/Applications/Groq Queen AI Studio (Mantra).app"
+SWIFT_QUEEN_APP = "/Applications/Queen.app"
 
 
 def open_swift_queen():
@@ -3700,7 +3700,7 @@ def main():
             pass
 
     # 14.11.2026, Marko: "please remove Flask Queen, keep only Swift Queen". The face of Queen is the Swift app
-    # Groq Queen AI Studio (Mantra); this server is only its backend and the HTTP API (queen CLI, /api/*). The old web
+    # Queen; this server is only its backend and the HTTP API (queen CLI, /api/*). The old web
     # page at / is no longer opened by anything; it stays served only as a hidden fallback for the panels the Swift app
     # does not have yet (keys import, auto-update studio, star/voice/elevate modals). QWEN_BROWSER=1 opens it on purpose.
     # (QWEN_NO_BROWSER is still accepted and changes nothing: no tab is the default now.)
@@ -3711,7 +3711,7 @@ def main():
     print(f"\033[1;32m  Groq Modern AI Studio & Chatbot — Version {VERSION} is LIVE\033[0m")
     if port != requested_port:
         print(f"\033[1;33m  Notice:\033[0m Port {requested_port} was busy. Bound to first free port: \033[1;32m{port}\033[0m")
-    print(f"\033[1m  URL:\033[0m \033[4;34m{url}\033[0m (API only; the window is the Swift app Groq Queen AI Studio (Mantra))")
+    print(f"\033[1m  URL:\033[0m \033[4;34m{url}\033[0m (API only; the window is the Swift app Queen)")
     if QWEN_BACKEND:
         print("\033[1;33m  Role:\033[0m internal backend of the Swift app (it serves 127.0.0.1:8765 and proxies the rest here)")
     key_info = f"\033[1;32m{len(pool.keys)} key(s) in Key Manager\033[0m" if pool.keys else "\033[1;33mNo keys configured (click '📥 Import Keys')\033[0m"
@@ -3719,7 +3719,7 @@ def main():
     print(f"\033[1;35m  Back Door:\033[0m POST {url}/api/remote/send | POST {url}/api/test/live | POST {url}/api/terminal/log")
     print(f"\033[1;33m  Raw keyboard controls in this terminal:\033[0m")
     print(f"    • Press \033[1;31m'q'\033[0m to quit the server cleanly")
-    print(f"    • Press \033[1;36m'c'\033[0m to open the Swift app Groq Queen AI Studio (Mantra)")
+    print(f"    • Press \033[1;36m'c'\033[0m to open the Swift app Queen")
     print(f"    • Press \033[1;35m'g'\033[0m to inspect GitHub repositories")
     print(f"    • Press \033[1;32m's'\033[0m to show spend & billing stats")
     print(f"    • Press \033[1;35m't'\033[0m to run the live visible self-test suite")

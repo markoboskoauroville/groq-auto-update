@@ -1,4 +1,4 @@
-// axread: the text of any Mac app through the Accessibility API, as JSON (Groq/Queen AI Studio (Mantra), 14.11.2026).
+// axread: the text of any Mac app through the Accessibility API, as JSON (Queen, 14.11.2026).
 // Marko, 14.11.2026: "upgrade it with new skills for accessibility ... Without taking screenshots, it needs to use
 // accessibility to get the text". Queen (qwen_app/ax_read.py, POST /api/ax/read) calls this; nothing is clicked or typed.
 //

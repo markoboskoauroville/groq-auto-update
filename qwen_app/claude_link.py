@@ -38,7 +38,7 @@ WORKDIR = Path.home() / ".groq" / "claude_link"
 CONSENT_TEXT = "I cannot reach the local Claude Code. Do you want to use API credits?"
 _STATUS = {"t": 0, "value": None}
 # The headless run still reads Marko's CLAUDE.md (voice replies, handover, session greeting). Queen wants the answer only.
-HEADLESS_NOTE = ("You are answering QUEEN (Groq AI Studio), headless, through `claude -p`: no human is watching this run. "
+HEADLESS_NOTE = ("You are answering QUEEN, headless, through `claude -p`: no human is watching this run. "
                  "Do not speak (no langsay or voice), no handover report, no greeting, no questions back. "
                  "Do only what the request asks and answer with the result in plain text.")
 

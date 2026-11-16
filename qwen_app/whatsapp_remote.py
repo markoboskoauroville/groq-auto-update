@@ -30,14 +30,18 @@ from flask import jsonify, request
 
 WA = Path.home() / "Developer" / "claude-code" / "tools" / "wa_remote.py"
 SKILL = Path(__file__).resolve().parent.parent / "queen_skills" / "whatsapp-remote.md"
-ENV = dict(os.environ, FIREFOXCTL_PORT=os.environ.get("FIREFOXCTL_PORT", "9223"))
+import ffport
+
+
+def _env():
+    return dict(os.environ, FIREFOXCTL_PORT=ffport.firefox_port())
 LOCK = threading.Lock()
 PENDING = {"plan": None, "at": 0}   # a plan waiting for his pick of a chat
 ACTIONS = {"shot", "open", "scroll", "draft", "photo_draft", "chats"}
 
 
 def _wa(*args, timeout=150):
-    r = subprocess.run([sys.executable, str(WA), "--json", *args], capture_output=True, text=True, timeout=timeout, env=ENV, cwd=str(WA.parent))
+    r = subprocess.run([sys.executable, str(WA), "--json", *args], capture_output=True, text=True, timeout=timeout, env=_env(), cwd=str(WA.parent))
     line = next((l for l in reversed(r.stdout.strip().splitlines()) if l.startswith("{")), "")
     try:
         return json.loads(line)

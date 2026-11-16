@@ -218,7 +218,7 @@ final class EventHub {
 /// Claude Code not reachable -> 409 {need_consent, message: "I cannot reach the local Claude Code. Do you want to use API credits?"}.
 final class ClaudeLink {
     static let consentText = "I cannot reach the local Claude Code. Do you want to use API credits?"
-    static let headlessNote = "You are answering QUEEN (Groq AI Studio), headless, through `claude -p`: no human is watching this run. "
+    static let headlessNote = "You are answering QUEEN, headless, through `claude -p`: no human is watching this run. "
         + "Do not speak (no langsay or voice), no handover report, no greeting, no questions back. "
         + "Do only what the request asks and answer with the result in plain text."
 

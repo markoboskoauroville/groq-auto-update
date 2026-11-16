@@ -8,7 +8,7 @@ to get the text".
         A node: {role, title?, value?, description?, x?, y?, w?, h?, children?: [...]}
 
 The reader is the Swift CLI `axread` (repo groq_ai_studio, folder mac_app, built by GitHub, shipped inside
-"Groq Queen AI Studio (Mantra).app/Contents/MacOS/axread", linked as ~/.local/bin/axread). When it is not there the same walk runs here
+"Queen.app/Contents/MacOS/axread", linked as ~/.local/bin/axread). When it is not there the same walk runs here
 in Python (pyobjc, ApplicationServices loaded by hand: no extra package). Both print the same JSON.
 
 Firefox: its web content (AXWebArea) appears only after an assistive client asks; we set AXManualAccessibility (and
@@ -26,7 +26,7 @@ from pathlib import Path
 
 AXREAD_PATHS = [
     os.path.expanduser("~/.local/bin/axread"),
-    "/Applications/Groq Queen AI Studio (Mantra).app/Contents/MacOS/axread",
+    "/Applications/Queen.app/Contents/MacOS/axread",
 ]
 TEXT_KEYS = ("title", "value", "description")
 

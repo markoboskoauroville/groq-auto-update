@@ -1,12 +1,12 @@
 #!/bin/sh
-# build.sh: Groq Queen AI Studio (Mantra).app (shown as Groq/Queen AI Studio (Mantra)) + axread inside it. swiftc straight, no Xcode. Run ONLY by GitHub
+# build.sh: Queen.app (shown as Queen) + axread inside it. swiftc straight, no Xcode. Run ONLY by GitHub
 # (.github/workflows/build.yml, SIGN=- NO_INSTALL=1): nothing is compiled on Marko's Mac (MANTRA_MANIFEST android-app.md §0).
 # On the Mac the release zip is downloaded, unpacked into /Applications and signed "Mantra Apps" (install.sh).
 set -e
 cd "$(dirname "$0")"
 V=$(sed -n 's/^let VERSION = \([0-9]*\)/\1/p' app/App.swift)
-NAME="Groq Queen AI Studio (Mantra)"
-DISPLAY="Groq/Queen AI Studio (Mantra)"
+NAME="Queen"
+DISPLAY="Queen"
 APP="build/$NAME.app"
 rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 swiftc -O -swift-version 5 -parse-as-library -o "$APP/Contents/MacOS/GroqAIStudio" app/*.swift app/core/*.swift

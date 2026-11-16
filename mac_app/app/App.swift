@@ -1,4 +1,4 @@
-// Groq/Queen AI Studio (Mantra): Queen herself on the Mac. Since v5 (Phase A, 14.11.2026) this app serves 127.0.0.1:8765
+// Queen: Queen herself on the Mac. Since v5 (Phase A, 14.11.2026) this app serves 127.0.0.1:8765
 // (core/QueenServer.swift) and starts the Python server as its internal backend on 8766 for the routes not moved yet.
 // Marko, 14.11.2026: "now it is time to convert our Grok AI Studio into a Swift app. Please do that and upgrade it with new
 // skills for accessibility". Swift only, no web view (MANTRA_MANIFEST swift-apps.md); compiled only by GitHub (build.yml).
@@ -8,8 +8,8 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 
-let VERSION = 5
-let APP_NAME = "Groq/Queen AI Studio (Mantra)"
+let VERSION = 6
+let APP_NAME = "Queen"
 
 enum Ink {
     static let bg = Color(red: 0.07, green: 0.07, blue: 0.08)
@@ -106,7 +106,7 @@ struct TopRow: View {
     @AppStorage("onTop") private var onTop = false
     var body: some View {
         ZStack {
-            (Text("Groq/Queen AI Studio").fontWeight(.bold) + Text(" (Mantra)").fontWeight(.regular))
+            (Text("Queen").fontWeight(.bold) + Text(""))
                 .font(.system(size: 15)).foregroundStyle(Ink.text)
                 .lineLimit(1)
             HStack(spacing: 6) {
@@ -123,7 +123,7 @@ struct TopRow: View {
                 }
                 if !perms.missing.isEmpty {
                     Word(text: "PERMISSIONS", id: "permissions", color: Ink.amber,
-                         help: "Accessibility is not allowed yet: a click opens its page in System Settings; switch Groq/Queen AI Studio (Mantra) on there") {
+                         help: "Accessibility is not allowed yet: a click opens its page in System Settings; switch Queen on there") {
                         Permissions.openMissing()
                     }
                 }
@@ -140,7 +140,7 @@ struct TopRow: View {
     }
 
     static func float(_ on: Bool) {
-        for w in NSApp.windows where w.title.hasPrefix("Groq/Queen AI Studio") || w.identifier?.rawValue == "main" {
+        for w in NSApp.windows where w.title.hasPrefix("Queen") || w.identifier?.rawValue == "main" {
             w.level = on ? .floating : .normal
         }
     }
@@ -330,7 +330,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
         QueenHost.shared.start(appVersion: VERSION)     // Phase A: Queen's server is this app (8765), Python is its backend (8766)
         Queen.shared.start()
         DispatchQueue.main.async {
-            for w in NSApp.windows where w.title.hasPrefix("Groq/Queen AI Studio") { w.setFrameAutosaveName("GroqAIStudioMain") }
+            for w in NSApp.windows where w.title.hasPrefix("Queen") { w.setFrameAutosaveName("GroqAIStudioMain") }
         }
         Updater.checkAtStart()
     }

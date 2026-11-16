@@ -1,4 +1,4 @@
-# mac-app.yml from MANTRA_MANIFEST/workflows/mac-swift.yml: GitHub compiles Groq Queen AI Studio (Mantra).app (Groq/Queen AI Studio (Mantra)) and axread (mac_app/)
+# mac-app.yml from MANTRA_MANIFEST/workflows/mac-swift.yml: GitHub compiles Queen.app (Queen) and axread (mac_app/)
 # at every push to main that touches mac_app/, and publishes the release vN (VERSION in mac_app/app/App.swift) as Latest.
 # The app's Updater asks Marko at start when a newer vN is there. Nothing is compiled on the Mac.
 name: mac-app
@@ -10,7 +10,7 @@ on:
 permissions:
   contents: write
 env:
-  APP: "Groq Queen AI Studio (Mantra)"
+  APP: "Queen"
   VERSION_FILE: mac_app/app/App.swift
 jobs:
   build:

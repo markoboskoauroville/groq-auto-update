@@ -28,7 +28,9 @@ import time
 
 import ax_read
 
-FF_PORT = os.environ.get("FIREFOXCTL_PORT", "9223")
+import ffport
+
+FF_PORT = ffport.firefox_port()  # re-read per call in _ffctl
 FIREFOXCTL = os.path.expanduser("~/.local/bin/firefoxctl")
 LOCK = "/tmp/wa-bidi.lock"          # the one BiDi slot shared with wa_remote, the door, vm-whatsapp
 ICON_PX = 12                        # an offset of 12 px or more before the text = an icon is there
@@ -198,7 +200,7 @@ def _give_back(app):
 
 
 def _ffctl(*args, timeout=60):
-    env = dict(os.environ, FIREFOXCTL_PORT=FF_PORT)
+    env = dict(os.environ, FIREFOXCTL_PORT=ffport.firefox_port())
     with open(LOCK, "a") as f:
         end = time.time() + 90
         while True:
@@ -219,7 +221,7 @@ def make_readable(log):
     try:
         code, out = _ffctl("tabs")
         if code != 0:
-            raise RuntimeError("Firefox's remote control does not answer on port " + FF_PORT + ": " + out[-200:])
+            raise RuntimeError("Firefox's remote control does not answer on port " + ffport.firefox_port() + ": " + out[-200:])
         if "web.whatsapp.com" not in out:
             log.append("no WhatsApp tab: opened https://web.whatsapp.com in Firefox (remote control)")
             _ffctl("open", "https://web.whatsapp.com", "--new", timeout=90)

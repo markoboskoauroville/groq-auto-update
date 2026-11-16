@@ -211,3 +211,10 @@ Queen said "Done" after a bare `open x-apple.systempreferences:` that landed on 
 - 15.11.2026: Asana Guide builder hand (chat_asana in ops_hands.py, skill asana-guide-sync.md): "asana build status" / "build asana now", $0, local; tested in her chat (status). Bridge: ~/Developer/ASANA_GUIDE/mac/asana_sync.py.
 
 15.11.2026, teaching round: `/api/remote/send` goes to the MODEL, not the local chain. A test of a local phrase there costs about $0.02 per turn and the model invents tool calls it does not have. Test phrases with `/api/internal/local_command` (token in X-Queen-Token). Bare words ("record", "keep", "stop") are answered only while the app they belong to is running, otherwise they fall through to the model.
+
+## 16.11.2026: Firefox port and the name Queen (v6)
+- Her WhatsApp/Firefox route forced port 9223 (whatsapp_ax.py, whatsapp_remote.py); Firefox (firefoxctl) now listens on 9222 and
+  nothing answered on 9223 ("Firefox is not listening on 127.0.0.1:9223"). qwen_app/ffport.py asks lsof which process holds 9223/9222
+  and returns the one Firefox holds (Chrome's cdp_broker may hold 9222), checked on every call; wa_remote.py tries env, 9223, 9222.
+- Rename: Marko, 16.11.2026: "rename the Groq Queen to be Queen". Mac app is now `/Applications/Queen.app`, shown "Queen" (window,
+  top row, menu, API text); v6. Repo, folders, bundle id and the `qwen` command unchanged.

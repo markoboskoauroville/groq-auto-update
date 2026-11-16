@@ -122,7 +122,7 @@ final class QueenServer {
         let key = r.method + " " + r.path
         switch key {
         case "GET /", "HEAD /":
-            res.text(200, "Queen is the Swift app Groq Queen AI Studio (Mantra). This is her API on http://127.0.0.1:8765.\n")
+            res.text(200, "Queen is the Swift app Queen. This is her API on http://127.0.0.1:8765.\n")
         case "GET /health": res.json(health())
         case "GET /api/version": res.json(version())
         case "GET /api/app/status": res.json(appStatus())
