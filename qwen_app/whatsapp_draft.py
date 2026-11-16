@@ -14,12 +14,15 @@ def chat_whatsapp_draft_command(text):
     if not m:
         return None
     chat, body = m.group(1).strip().strip('"'), m.group(2).strip()
+    # "Santoshi chat/group" or "<name> group" = the group (--group); a person's name alone = the private chat (16.11.2026)
+    group = bool(re.search(r"\b(group|chat)\b", chat, re.I) and re.search(r"santoshi|group", chat, re.I))
+    chat = re.sub(r"\s+(group|chat)$", "", chat, flags=re.I).strip()
     if not chat or not body:
         return "Say the chat and the text: draft in WhatsApp to <chat>: <text>."
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as f:
         f.write(body)
     try:
-        r = subprocess.run(["python3", "-I", TOOL, chat, f.name], capture_output=True, text=True, timeout=180)
+        r = subprocess.run(["python3", "-I", TOOL, chat, f.name] + (["--group"] if group else []), capture_output=True, text=True, timeout=180)
         out = (r.stdout + r.stderr).strip()
     except Exception as e:
         return f"The draft did not run: {e}"
