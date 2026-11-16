@@ -85,6 +85,19 @@ def chat_vpn(low):
     return vpn_status()
 
 
+def chat_tailscale(low):
+    """16.11.2026 (Marko: "the TAILSCALE switch is always off when I start it"): the stored macro skill tailscale-ensure-up."""
+    if re.match(r"^(is )?tailscale( up| on| connected| status| state)?\??$|^is tailscale (up|on|connected)\??$", low):
+        args = ["--check"]
+    elif re.match(r"^(connect|start|turn on|switch on|bring up|fix) (the )?tailscale( up| on)?$|^tailscale (connect|on|up now)$|^ensure tailscale( up)?$", low):
+        args = []
+    else:
+        return None
+    exe = shutil.which("tailscale-ensure-up") or os.path.expanduser("~/.local/bin/tailscale-ensure-up")
+    out, rc = _sh([exe, *args], 25)
+    return out.strip() or f"tailscale-ensure-up gave no answer (exit {rc})."
+
+
 # ---------------------------------------------------------------- 2. pre-show / stream on the VM
 def _mr(*a, timeout=60):
     return _sh(["ssh", "-o", "ConnectTimeout=8", "chromium-vm", "mrlinux", *a], timeout)
@@ -365,7 +378,7 @@ def chat_ops_command(text):
     if not t or len(t) > 160:
         return None
     low = _norm(t)
-    for fn in (chat_vpn, chat_stream, chat_talkmode, chat_engine, chat_cleanup, chat_asana, chat_lights, chat_meditation):
+    for fn in (chat_vpn, chat_tailscale, chat_stream, chat_talkmode, chat_engine, chat_cleanup, chat_asana, chat_lights, chat_meditation):
         try:
             a = fn(low, t) if fn is chat_meditation else fn(low)
         except Exception as e:
