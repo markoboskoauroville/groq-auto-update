@@ -6,6 +6,9 @@
 
 15.11.2026: `qwen_app/ndi_monitor.py` + `queen_skills/ndi-monitor-source.md`: `GET /api/ndi/sources`, `POST /api/ndi/select {source}` and local chat ("show Meditation Room in the NDI monitor", "switch NDI source to X", "which NDI sources are there") call the macro skills ndi-monitor-list / ndi-monitor-source (MACRO_SKILLS, tool ndimon). Tested through `queen` with a screenshot.
 
+## 16.11.2026: Google Photos album + share link (`qwen_app/gphotos_album.py`, skill `queen_skills/google-photos-album.md`)
+Marko: "make gallery in my Google photos and then we're going to share it with Svemir". Route `POST /api/gphotos/album {album, files, share}`; local chat command ($0): `make a Google Photos album "Title" from ~/folder` or `share link of my Google Photos album "Title"`. Firefox BiDi, real clicks, files built in the page; the link is answered, never sent. Tested through Queen's chat 16.11.2026 (answered the link of "Wyoga poses (wooden mannequin)", $0).
+
 ## 14.11.2026 (night, cloud): PHASE A, the Swift app IS Queen on 8765 (app v5)
 
 Marko: "one Queen only, the Swift app, no Flask server behind it, done in phases." Report: `docs/PHASE_A_REPORT.md`.

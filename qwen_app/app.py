@@ -647,6 +647,13 @@ except Exception as _ndi_exc:
 
 
 try:
+    from gphotos_album import register as _register_gphotos   # 16.11.2026: Google Photos album in Marko's Firefox
+    _register_gphotos(app)
+except Exception as _gp_exc:
+    print(f"[gphotos_album] not loaded: {_gp_exc}")
+
+
+try:
     from system_volume import register as _register_volume
     _register_volume(app)
 except Exception as _vol_exc:
@@ -994,6 +1001,9 @@ def _local_command_answer(last_user_text: str):
         if sys.platform == "darwin":
             from system_volume import chat_volume_command   # 14.11.2026: Mac output volume, $0, before anything else
             local_answer = chat_volume_command(last_user_text)
+        if not local_answer and sys.platform == "darwin":
+            from gphotos_album import chat_gphotos_command   # 16.11.2026: Google Photos album + share link (Firefox BiDi), $0
+            local_answer = chat_gphotos_command(last_user_text)
         if not local_answer:
             from ops_hands import chat_ops_command   # 15.11.2026: VPN, pre-show/stream, Talk Mode, VTT engines, testclean, G815, Meditation Room; $0
             local_answer = chat_ops_command(last_user_text)
