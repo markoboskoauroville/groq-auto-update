@@ -133,7 +133,7 @@ final class PauseState {
             return "Resumed. Queued work goes on."
         case "pause status", "paused", "am i paused", "are you paused", "queen pause status":
             if isPaused {
-                let s = (sinceValue as? Double).map { Clock.format("%H:%M:%S", Date(timeIntervalSince1970: $0)) } ?? "?"
+                let s = (sinceValue as? Double).map { Clock.format("HH:mm:ss", Date(timeIntervalSince1970: $0)) } ?? "?"
                 return "Paused since \(s); \(queued) waiting."
             }
             return "Not paused."
