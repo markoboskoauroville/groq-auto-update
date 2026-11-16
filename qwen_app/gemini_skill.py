@@ -147,6 +147,7 @@ def make_image(prompt, image_path, out_path, account=ACCOUNT, wait=180, max_acco
             return r
         except Exhausted as exc:
             tried.append(f"{email}: {str(exc)[:120]}")
+            _account_tool("mark-exhausted", email)     # the in-tab switch (gemini-switch-account) learns it too
             continue
         except GeminiError as exc:
             # a Chrome box ("Something went wrong when opening your profile") stalls DevTools: Macro Recorder closes it,
@@ -374,7 +375,35 @@ def _make_with(prompt, image_path, out_path, account, pdir, wait=180):
         cdp.close()
 
 
+ACCOUNT_TOOL = Path.home() / "Developer" / "MACRO_SKILLS" / "tools" / "gemini_account.py"
+
+
+def _account_tool(*args, timeout=90):
+    """MACRO_SKILLS gemini_account.py (status / next / mark-exhausted / switch): returns (ok, output). Never raises."""
+    try:
+        r = subprocess.run(["python3", str(ACCOUNT_TOOL), *args], capture_output=True, text=True, timeout=timeout)
+        return r.returncode == 0, (r.stdout + r.stderr).strip()
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+
+
 def register(app):
+    @app.post("/api/gemini/account")
+    def gemini_account():
+        """{"do": "status" | "next" | "switch" | "mark-exhausted", "tab"?, "to"?, "email"?} - Gemini's Google account in Chrome."""
+        d = request.get_json(silent=True) or {}
+        act = d.get("do", "status")
+        if act not in ("status", "next", "switch", "mark-exhausted"):
+            return jsonify(ok=False, error="do = status | next | switch | mark-exhausted"), 400
+        args = [act]
+        for flag in ("tab", "to"):
+            if d.get(flag):
+                args += [f"--{flag}", str(d[flag])]
+        if act == "mark-exhausted" and d.get("email"):
+            args.append(str(d["email"]))
+        ok, out = _account_tool(*args)
+        return jsonify(ok=ok, output=out), (200 if ok else 409)
+
     @app.post("/api/gemini/image")
     def gemini_image():
         d = request.get_json(silent=True) or {}
