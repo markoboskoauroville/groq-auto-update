@@ -1,6 +1,6 @@
 {
-  "version": 5,
-  "updated_at": "2026-11-11T22:12:52+0100",
+  "version": 6,
+  "updated_at": "2026-11-16T09:00:00+0100",
   "log": [
     {
       "version": 1,
@@ -41,10 +41,18 @@
     {
       "version": 5,
       "timestamp": "2026-11-11T22:12:52+0100",
-      "message": "Add complete Key Tester feature with two-tab sidebar UI (\u26a1 Groq Studio / \ud83d\udd11 Key Tester) and backend routes for masked key inventory + live multi-provider key testing",
+      "message": "Add complete Key Tester feature with two-tab sidebar UI (⚡ Groq Studio / 🔑 Key Tester) and backend routes for masked key inventory + live multi-provider key testing",
       "files": [
         "index.html",
         "app.py"
+      ]
+    },
+    {
+      "version": 6,
+      "timestamp": "2026-11-16T09:00:00+0100",
+      "message": "v6: renamed to Queen; Firefox BiDi port found by owner",
+      "files": [
+        "qwen_app/ffport.py"
       ]
     }
   ]
