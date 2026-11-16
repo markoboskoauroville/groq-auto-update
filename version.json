@@ -1,6 +1,6 @@
 {
-  "version": 6,
-  "updated_at": "2026-11-16T09:00:00+0100",
+  "version": 7,
+  "updated_at": "2026-11-16T12:00:00+0100",
   "log": [
     {
       "version": 1,
@@ -53,6 +53,16 @@
       "message": "v6: renamed to Queen; Firefox BiDi port found by owner",
       "files": [
         "qwen_app/ffport.py"
+      ]
+    },
+    {
+      "version": 7,
+      "timestamp": "2026-11-16T12:00:00+0100",
+      "message": "v7: PAUSE / RESUME / STATUS (/api/pause, /api/resume, /api/pause/status), pause.json, chat pause/resume, skill pause-all",
+      "files": [
+        "qwen_app/pause_state.py",
+        "qwen_app/app.py",
+        "mac_app/app/core/Pause.swift"
       ]
     }
   ]

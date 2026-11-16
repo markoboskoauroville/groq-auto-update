@@ -65,6 +65,7 @@ The app can update its own source files through a chunked transfer system:
 | GET | `/api/events` | SSE live events |
 | GET/POST | `/api/keys/*` | Key management |
 | GET/POST | `/api/chats/*` | Chat persistence |
+| POST/GET | `/api/pause`, `/api/resume`, `/api/pause/status` | PAUSE every hand (16.11.2026): `{paused,since,queued}`, chat `pause`/`resume`, state `~/.groq/pause.json`, skill pause-all |
 | GET/POST | `/api/self_update/*` | Self-update pipeline (chunk dispatcher) |
 | GET/POST | `/api/auto_update/*` | Surgical Auto-Update Pipeline (`Google` Gemini / `Anthropic` Claude switch, models, keys, 6-stage SSE runner, USD ledger) |
 | GET/POST | `/api/github/*` | GitHub reader (one file at a time, 🐙) |

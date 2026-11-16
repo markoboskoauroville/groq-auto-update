@@ -4,6 +4,13 @@
 
 # Groq AI Studio: takeover
 
+## 16.11.2026: PAUSE / RESUME / STATUS (app v7, `qwen_app/pause_state.py`, `mac_app/app/core/Pause.swift`, skill `queen_skills/pause-all.md`)
+Marko: "Please expand the pause to macro recorder and Queen. All our tools need to be paused at the same time and need to have this kind of API calls to be stopped."
+Routes on 8765: `POST /api/pause`, `POST /api/resume`, `GET /api/pause/status` -> `{"paused":bool,"since":epoch|null,"queued":N}`. Chat (local, $0): `pause`, `resume`, `pause status`; CLI `queen pause|resume|pause status`. State file `~/.groq/pause.json`, written atomically by BOTH sides (Swift app and Python backend read it by mtime), so a restart while paused stays paused.
+Paused = Swift: no new Groq call; a chat is queued (up to 300 s, then answered `{"t":"paused","paused":true}`) and goes on at resume; `/api/remote/send`, `/api/claude/ask|tell` and every proxied POST (except chats/keys/supervisor/training/pause) are answered at once `{"ok":false,"paused":true,...}`; a Groq stream in flight is cancelled (LineStream.cancel), no ledger line, no key cooled, no after-turn work. Python: `pause_state.install()` wraps `subprocess.Popen` (macro, firefoxctl, adb, osascript...) and `urllib.request.urlopen`: nothing new starts while paused (waits at the checkpoint, goes on at resume), an outgoing urlopen in flight is abandoned (`PausedError`, answered paused); the POST gate in app.py answers paused at once. Registered with Claude Control: `~/.config/claude-control/tools.json` entry "Queen".
+Not covered: SDK calls (groq/anthropic via httpx) already streaming inside the Python app are only gated at the route entry; a single long subprocess finishes first ("between steps").
+
+
 15.11.2026: `qwen_app/ndi_monitor.py` + `queen_skills/ndi-monitor-source.md`: `GET /api/ndi/sources`, `POST /api/ndi/select {source}` and local chat ("show Meditation Room in the NDI monitor", "switch NDI source to X", "which NDI sources are there") call the macro skills ndi-monitor-list / ndi-monitor-source (MACRO_SKILLS, tool ndimon). Tested through `queen` with a screenshot.
 
 ## 16.11.2026: Google Photos album + share link (`qwen_app/gphotos_album.py`, skill `queen_skills/google-photos-album.md`)

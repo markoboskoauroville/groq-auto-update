@@ -417,6 +417,33 @@ do {
     check(down.status == 502 && down.json["ok"] as? Bool == false, "backend down: proxied route gives 502 JSON", "\(down.status)")
 }
 
+// ---------------------------------------------------------------- 11b. PAUSE / RESUME / STATUS (16.11.2026)
+do {
+    let s0 = call("GET", "/api/pause/status")
+    check(s0.status == 200 && s0.json["paused"] as? Bool == false && s0.json["since"] is NSNull && s0.json["queued"] is NSNumber,
+          "pause status: not paused, since null, queued N", "\(s0.json)")
+    let p = call("POST", "/api/pause")
+    check(p.status == 200 && p.json["paused"] as? Bool == true && (p.json["since"] as? NSNumber) != nil, "POST /api/pause: paused, since epoch", "\(p.json)")
+    check(FileManager.default.fileExists(atPath: groqDir + "/pause.json"), "the pause is stored in pause.json (survives a restart)")
+    let rs = call("POST", "/api/remote/send", ["prompt": "hi", "fresh": true])
+    check(rs.status == 200 && rs.json["paused"] as? Bool == true && rs.json["ok"] as? Bool == false, "paused: remote/send answered at once as paused", "\(rs.json)")
+    let px = call("POST", "/api/brain/plan", ["goal": "x"])
+    check(px.status == 200 && px.json["paused"] as? Bool == true, "paused: a proxied POST is answered as paused, not sent", "\(px.json)")
+    let st = streamLines("/api/chat", ["messages": [["role": "user", "content": "pause status"]]])
+    check(st.1.joined().contains("Paused since"), "chat line 'pause status' answers while paused", "\(st.1)")
+    let s1 = call("GET", "/api/pause/status")
+    check(s1.json["paused"] as? Bool == true, "status says paused", "\(s1.json)")
+    let r = call("POST", "/api/resume")
+    check(r.status == 200 && r.json["paused"] as? Bool == false && r.json["since"] is NSNull, "POST /api/resume: running again", "\(r.json)")
+    let rs2 = call("POST", "/api/remote/send", ["prompt": "hi", "fresh": true])
+    check(rs2.json["paused"] as? Bool != true, "after resume remote/send is not paused", "\(rs2.json)")
+    let cp = streamLines("/api/chat", ["messages": [["role": "user", "content": "pause"]]])
+    check(cp.1.joined().contains("Paused."), "chat 'pause' pauses", "\(cp.1)")
+    check(call("GET", "/api/pause/status").json["paused"] as? Bool == true, "chat pause really paused")
+    let cr = streamLines("/api/chat", ["messages": [["role": "user", "content": "resume"]]])
+    check(cr.1.joined().contains("Resumed") && call("GET", "/api/pause/status").json["paused"] as? Bool == false, "chat 'resume' resumes", "\(cr.1)")
+}
+
 // ---------------------------------------------------------------- 12. the security guard
 do {
     let bad = call("GET", "/api/keys", headers: [("Origin", "http://evil.example")])

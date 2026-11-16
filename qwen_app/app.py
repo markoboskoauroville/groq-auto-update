@@ -42,6 +42,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from flask import Flask, Response, jsonify, request  # noqa: E402
+import pause_state  # noqa: E402  16.11.2026: PAUSE / RESUME for every hand
+pause_state.install()
 from groq import APIError, AuthenticationError, Groq, PermissionDeniedError, RateLimitError  # noqa: E402
 from waitress.server import create_server  # noqa: E402
 from groq_pool import (  # noqa: E402
@@ -682,6 +684,48 @@ def app_status():
                    location=os.environ.get("QUEEN_LOCATION", "mac"), pid=os.getpid())
 
 
+# 16.11.2026 PAUSE (Marko: "All our tools need to be paused at the same time"): shared state file ~/.groq/pause.json
+@app.post("/api/pause")
+def api_pause():
+    return jsonify(ok=True, **pause_state.set_paused(True))
+
+
+@app.post("/api/resume")
+def api_resume():
+    return jsonify(ok=True, **pause_state.set_paused(False))
+
+
+@app.get("/api/pause/status")
+def api_pause_status():
+    return jsonify(ok=True, **pause_state.status())
+
+
+@app.errorhandler(pause_state.PausedError)
+def _paused_error(_e):
+    return jsonify(pause_state.paused_reply()), 200
+
+
+_PAUSE_EXEMPT = ("/api/pause", "/api/resume", "/api/internal/", "/api/chats", "/api/keys", "/api/reset-keys",
+                 "/api/supervisor", "/api/training", "/api/terminal/log", "/api/events")
+
+
+@app.before_request
+def pause_gate():
+    """While paused, a POST that would start work is answered at once {"paused":true,...}; the page's own bookkeeping
+    (chats, keys, supervisor, pause itself) still works. Running hands stop at their next step (pause_state.install)."""
+    if request.method == "POST" and request.path.startswith("/api/") and pause_state.is_paused():
+        if not request.path.startswith(_PAUSE_EXEMPT):
+            if request.path == "/api/chat":
+                _msgs = (request.get_json(silent=True) or {}).get("messages") or []
+                _last = next((m.get("content") for m in reversed(_msgs) if isinstance(m, dict) and m.get("role") == "user"), "")
+                _pc = pause_state.chat_command(_last if isinstance(_last, str) else "")
+                if _pc:
+                    return Response(json.dumps({"t": _pc}) + "\n", mimetype="application/x-ndjson")
+                return Response(json.dumps({"t": "paused", "paused": True}) + "\n", mimetype="application/x-ndjson")
+            return jsonify(pause_state.paused_reply()), 200
+    return None
+
+
 # Phase A (14.11.2026): the Swift app serves /api/chat itself and calls these for the parts that stay in Python for now.
 @app.post("/api/internal/local_command")
 def internal_local_command():
@@ -993,6 +1037,11 @@ def remote_send():
 def _local_command_answer(last_user_text: str):
     """Queen's local chat commands, matched before Groq is called (no tokens, no cost). None = not a command.
     Phase A (14.11.2026): also served to the Swift app as POST /api/internal/local_command."""
+    _pc = pause_state.chat_command(last_user_text)   # 16.11.2026: "pause" / "resume" / "pause status", always answered, $0
+    if _pc:
+        return _pc
+    if pause_state.is_paused():
+        return None   # paused: no hand starts (the route gate answers "paused")
     # "open Affinity" / "close Affinity" and "tree|read|search|sync <repo>": answered locally, not by the model (no tokens, no cost).
     try:
         # 14.11.2026, VM only: "open whatsapp" / "whatsapp: <request>" -> the WhatsApp machine (the VM's Firefox)

@@ -1,5 +1,8 @@
 # Requests, word for word
 
+16.11.2026, Marko: "Please expand the pause to macro recorder and Queen. All our tools need to be paused at the same time and need to have this kind of API calls to be stopped."
+Done: POST /api/pause, POST /api/resume, GET /api/pause/status ({"paused","since","queued"}), chat "pause" / "resume" / "pause status", `queen pause|resume`, skill queen_skills/pause-all.md, state ~/.groq/pause.json shared by the Swift app (v7) and the Python backend (qwen_app/pause_state.py); registered in ~/.config/claude-control/tools.json.
+
 11.11.2026, Marko: "please research the command from the terminal qwen Write in the skill open GitHub repository. Call it
 groq_ai_studio, and write everything you know about this app there. Also copy the source code and make it public. Of course you
 don't copy any API keys or any secrets there. Only the pure code. We are developing this app now."

@@ -8,7 +8,7 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 
-let VERSION = 6
+let VERSION = 7
 let APP_NAME = "Queen"
 
 enum Ink {

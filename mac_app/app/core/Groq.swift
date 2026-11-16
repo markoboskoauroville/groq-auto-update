@@ -106,15 +106,18 @@ struct GroqTurn {
     var error: String?          // set when the stream broke after the first token, or every key failed
     var started = false
     var allFailed = false
+    var paused = false          // cut by PAUSE: nothing to settle, nothing cooled, answered as "paused"
 }
 
 final class GroqClient {
     let cfg: QueenConfig
     let pool: KeyPool
+    let pause: PauseState
 
-    init(_ cfg: QueenConfig, _ pool: KeyPool) {
+    init(_ cfg: QueenConfig, _ pool: KeyPool, _ pause: PauseState) {
         self.cfg = cfg
         self.pool = pool
+        self.pause = pause
     }
 
     func request(_ path: String, key: String, body: [String: Any]? = nil, timeout: Double = 30) -> URLRequest {
@@ -149,6 +152,7 @@ final class GroqClient {
         var lastError = ""
         attempts: for (i, key) in candidates.enumerated() {
             let attempt = i + 1
+            if pause.isPaused { turn.paused = true; turn.error = "paused"; return turn }   // no new call while paused
             turn.servedKey = key
             if attempt > 1 {
                 turn.failovers += 1
@@ -156,7 +160,10 @@ final class GroqClient {
             }
             let body: [String: Any] = ["model": model, "messages": messages, "stream": true, "max_tokens": cfg.maxOutput]
             let ls = LineStream(request("/chat/completions", key: key, body: body, timeout: 300))
+            pause.register(ls)
+            defer { pause.unregister(ls) }
             guard ls.waitResponse() else {
+                if pause.isPaused { turn.paused = true; turn.error = "paused"; return turn }
                 lastError = ls.error?.localizedDescription ?? "no answer"
                 if inPool.contains(key) { pool.cool(key, model, status: 0, retryAfter: nil) }
                 continue
@@ -202,6 +209,10 @@ final class GroqClient {
                     if rt > 0 { turn.reasoningTokens = rt }
                 }
             }
+            if pause.isPaused && (broken != nil || ls.error != nil || !turn.started) {
+                // cut by PAUSE (the stream was cancelled): not an error, the key is not cooled
+                ls.cancel(); turn.paused = true; turn.error = "paused"; return turn
+            }
             if broken == nil, let e = ls.error, (e as NSError).code != NSURLErrorCancelled { broken = e.localizedDescription }
             if let b = broken {
                 if inPool.contains(key) { pool.cool(key, model, status: 0, retryAfter: nil) }
@@ -219,6 +230,7 @@ final class GroqClient {
 
     /// GET /models with one key: (status, json, headers).
     func models(key: String) -> (Int, [String: Any], [String: String])? {
+        if pause.isPaused { return nil }    // no new API call while paused
         let ls = LineStream(request("/models", key: key, timeout: 15), idleTimeout: 15)
         guard ls.waitResponse() else { return nil }
         let d = ls.readAll()

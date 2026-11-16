@@ -4,6 +4,8 @@
 
 # Groq AI Studio: lessons
 
+16.11.2026: PAUSE. (1) Two processes (Swift 8765, Python 8766) must share one switch: a file ~/.groq/pause.json written by tmp+rename and read by mtime on each side, never an in-memory flag per process. (2) Cancelling a Groq stream raises an error on the line stream: check the pause flag BEFORE treating it as a broken key, or the key is cooled for nothing. (3) A held chat request is bounded (300 s), a held route is not: routes that start work answer paused at once. (4) Wrapping subprocess.Popen.__init__ covers run/check_output/call at once; wrapping urlopen needs a worker thread to be able to abandon a call in flight. (5) Pause/resume/status and the page's bookkeeping must never be gated by the pause itself.
+
 14.11.2026 (night, cloud): PHASE A. (1) Two key pools on the same files: the Python pool kept key_state.json in memory and
 wrote it back whole, so it could undo a cooldown the Swift pool had just written. Both pools now read keys.txt and
 key_state.json from disk before every candidates/cool/good (groq_pool `_sync`). (2) The system prompt is not copied into Swift

@@ -25,6 +25,7 @@ final class QueenServer {
     let prompt: PromptBuilder
     let claude: ClaudeLink
     let events = EventHub()
+    let pause: PauseState
     let token: String
     private(set) var http: HTTPServer!
     private let msgLock = NSLock()
@@ -37,7 +38,8 @@ final class QueenServer {
         self.cfg = cfg
         pool = KeyPool(cfg)
         ledger = Ledger(cfg)
-        groq = GroqClient(cfg, pool)
+        pause = PauseState(cfg)
+        groq = GroqClient(cfg, pool, pause)
         prompt = PromptBuilder(cfg)
         claude = ClaudeLink(cfg)
         token = LocalToken.ensure(cfg)
@@ -94,6 +96,7 @@ final class QueenServer {
         "GET /api/supervisor/recent", "POST /api/supervisor/decide", "GET /api/skills/list",
         "POST /api/training/correct", "GET /api/training/status", "POST /api/training/build",
         "GET /", "HEAD /",
+        "POST /api/pause", "POST /api/resume", "GET /api/pause/status",
     ]
 
     func isNative(_ r: HTTPRequest) -> Bool {
@@ -114,6 +117,10 @@ final class QueenServer {
             return true
         }
         if isNative(r) { return false }
+        if r.method == "POST", pause.isPaused, !PauseState.isExempt(r.path) {   // paused: a route that would start work is answered at once
+            Responder(s, http10: r.version == "HTTP/1.0").json(200, pausedBody())
+            return true
+        }
         proxy(r, s)
         return true
     }
@@ -128,6 +135,9 @@ final class QueenServer {
         case "GET /api/app/status": res.json(appStatus())
         case "GET /api/models": res.json(models())
         case "GET /api/billing": res.json(billing())
+        case "POST /api/pause": pause.set(true); res.json(statusBody(ok: true))
+        case "POST /api/resume": pause.set(false); res.json(statusBody(ok: true))
+        case "GET /api/pause/status": res.json(statusBody(ok: true))
         case "POST /api/chat": chat(r, res)
         case "GET /api/events": sse(res)
         case "GET /api/session/messages":
@@ -161,12 +171,14 @@ final class QueenServer {
         case "GET /api/claude/transcript":
             claudeWrap(res) { try self.claude.transcript(r.query["sid"] ?? "", n: Int(r.query["n"] ?? "20") ?? 20) }
         case "POST /api/claude/ask":
+            if pause.isPaused { res.json(200, pausedBody()); return }
             let d = r.json
             let q = ((d["question"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if q.isEmpty { res.json(400, ["ok": false, "error": "pass {question}"]); return }
             let model = (d["model"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "sonnet"
             claudeWrap(res) { try self.claude.ask(q, model: model) }
         case "POST /api/claude/tell":
+            if pause.isPaused { res.json(200, pausedBody()); return }
             let d = r.json
             claudeWrap(res) { try self.claude.tell((d["sid"] as? String) ?? "", (d["text"] as? String) ?? "") }
         case "POST /api/supervisor/propose":
@@ -207,6 +219,21 @@ final class QueenServer {
                 res.json(404, ["ok": false, "error": "not found"])
             }
         }
+    }
+
+    // ------------------------------------------------------------ pause (16.11.2026)
+    /// {"paused":bool,"since":epoch|null,"queued":N}: queued = chats waiting here + hands waiting in the backend.
+    func statusBody(ok: Bool? = nil) -> [String: Any] {
+        var extra = 0
+        if let b = backend("GET", "/api/pause/status", timeout: 2), b.status == 200 { extra = Ledger.int(b.json["queued"]) }
+        var d = pause.statusJSON(extraQueued: extra)
+        if let ok = ok { d["ok"] = ok }
+        return d
+    }
+    func pausedBody() -> [String: Any] {
+        var d = pause.statusJSON()
+        d["ok"] = false; d["paused"] = true; d["error"] = "paused"
+        return d
     }
 
     // ------------------------------------------------------------ proxy to the Python backend
@@ -426,6 +453,18 @@ final class QueenServer {
         }
         let ndjson: [(String, String)] = [("Cache-Control", "no-cache"), ("X-Accel-Buffering", "no"), ("X-Content-Type-Options", "nosniff")]
 
+        // 0. PAUSE: 'pause' / 'resume' / 'pause status' always answer; any other chat waits (queued) until resume
+        if let pa = pause.chatCommand(lastUser) {
+            res.begin(200, "application/x-ndjson", headers: ndjson)
+            res.chunk(jsonLine(["t": pa]))
+            return
+        }
+        if pause.isPaused && !pause.waitWhilePaused(maxWait: 300) {
+            res.begin(200, "application/x-ndjson", headers: ndjson)
+            res.chunk(jsonLine(["t": "paused", "paused": true, "since": pause.sinceValue, "queued": pause.queued]))
+            return
+        }
+
         // 1. her local chat commands, matched before Groq is called (in Python for Phase A)
         if let lr = backend("POST", "/api/internal/local_command", ["text": lastUser], timeout: 1800), lr.status == 200,
            let answer = lr.json["answer"] as? String, !answer.isEmpty {
@@ -466,6 +505,10 @@ final class QueenServer {
         var turn = groq.stream(model: model, messages: groqMsgs, onFailover: { attempt, from, to in
             self.events.broadcast(["type": "key_failover", "attempt": attempt, "from_key": from, "to_key": to])
         }, onToken: { kind, text in res.chunk(jsonLine([kind: text])) })
+        if turn.paused {   // cut by PAUSE: no ledger line, no after-turn work; the answer is "paused", not an error
+            res.chunk(jsonLine(["paused": true, "t": turn.content.isEmpty ? "paused" : "\n[paused]", "since": pause.sinceValue]))
+            return
+        }
         if let e = turn.error {
             if e != "client gone" { res.chunk(jsonLine(["error": e])) }
             return
@@ -488,6 +531,7 @@ final class QueenServer {
 
     // ------------------------------------------------------------ /api/remote/send (JSON)
     func remoteSend(_ r: HTTPRequest, _ res: Responder) {
+        if pause.isPaused { res.json(200, pausedBody()); return }   // a backdoor call is not queued: answered at once
         if pool.count == 0 {
             res.json(400, ["ok": false, "error": "No API key configured. Call /api/keys/load-file first."])
             return
@@ -525,6 +569,7 @@ final class QueenServer {
             if kind == "t" { self.events.broadcast(["type": "stream_chunk", "token": text]) }
             return true
         })
+        if turn.paused { res.json(200, pausedBody()); return }
         if let e = turn.error {
             if turn.allFailed { res.json(503, ["ok": false, "error": e]) } else { res.json(500, ["ok": false, "error": e]) }
             return
