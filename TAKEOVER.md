@@ -33,3 +33,11 @@ too) and the Swift window gets a TRIPLE mode.
 
 **Where we are:** step 1 done.
 
+**Hand-over (17.11.2026, plan at 1%):** Marko: "And since we are losing the credits soon, only 1%, please give a task to Queen and
+API through our Queen API of Claude to finish updating the app. So they need to do, you just need to save this 1% as much as possible."
+The build runs OFF the plan on the API credit (headless Claude Code, Sonnet 5.5, budget cap $8), brief `docs/TRIPLE_CHAT_BRIEF.md`:
+`cd ~/Developer/groq_ai_studio && CLAUDE_API_MODEL=claude-sonnet-5-5 CLAUDE_API_BUDGET=8 nohup claude-api-mode run "$(cat docs/TRIPLE_CHAT_BRIEF.md)" > ~/.cache/triple-chat-build.log 2>&1 < /dev/null &`
+Progress: the ticks above (`git pull`), `git log --oneline -5`, `tail ~/.cache/triple-chat-build.log` (its report and
+`[claude-api-mode] cost $` appear only at the end), spend `claude-api-mode status` / ~/.cache/claude-api-ledger.jsonl.
+Resume: run the same command again; the builder starts at the first unticked step.
+
