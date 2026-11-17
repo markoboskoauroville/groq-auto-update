@@ -144,3 +144,6 @@ Status: in progress (replaces the earlier "don't test it"; TAKEOVER.md, TRIPLE C
 
 17.11.2026, Marko (word for word): "Please run another builder, which will use only my API, $100 API, and which is going to open now Queen and test triple mode and report bugs. Actually, it should not report bug. It should have to correct bug."
 Status: in progress (API builder opens the real Queen window, tests Triple Chat, fixes bugs; TAKEOVER.md, TRIPLE CHAT — TEST ROUND 2).
+
+17.11.2026, Marko (word for word): "Ask builder to show me the user interface and testing like a real person is using it, typing text, and doing other functions. And for that, it needs to use Macro Recorder and API keys through Groq. A Queen model."
+Status: in progress (visible Triple Chat demo by Macro Recorder, Queen as judge; TAKEOVER.md, TRIPLE CHAT — DEMO).
