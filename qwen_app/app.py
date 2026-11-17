@@ -238,6 +238,11 @@ MODEL_PRICING = {
     "meta-llama/llama-prompt-guard-2-86m": (0.04, 0.04),
     "meta-llama/llama-prompt-guard-2-22m": (0.03, 0.03),
     "canopylabs/orpheus-v1-english": (0.20, 0.20),
+    # Anthropic Claude (same rates as auto_updater.py, 17.11.2026): Triple Chat books its API calls here
+    "claude-fable-5-2": (8.00, 40.00),
+    "claude-opus-5-5": (4.00, 20.00),
+    "claude-sonnet-5-5": (2.00, 10.00),
+    "claude-haiku-5-5": (0.10, 0.50),
     "default": (0.50, 1.50),
 }
 
