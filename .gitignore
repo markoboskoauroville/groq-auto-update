@@ -21,3 +21,4 @@ gemini_key.txt
 VOICES_gemini-free-tier-api.txt
 .DS_Store
 mac_app/build/
+capi_key

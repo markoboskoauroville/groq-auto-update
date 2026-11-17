@@ -38,6 +38,7 @@ final class Capi: ObservableObject {
     @Published var busy = false                  // the conversation on screen is answering
     @Published var running = false              // the conversation on screen has its process
     @Published var notice = ""
+    @Published var keyNote = ""                  // "API key loaded (…abcd)" after the gear
     private var poller: Task<Void, Never>?
     private var shownSig = ""                    // what is on screen: count + last text, so a poll redraws only on change
     private var busyIds: Set<String> = []
@@ -207,6 +208,31 @@ final class Capi: ObservableObject {
         }
     }
 
+    /// The gear: a plain file picker; the server takes the sk-ant- key out of the file by shape (the key never comes here).
+    @MainActor
+    func pickKeyFile() {
+        let p = NSOpenPanel()
+        p.title = "The file with your Anthropic API key"
+        p.prompt = "Use this file"
+        p.canChooseFiles = true
+        p.canChooseDirectories = false
+        p.allowsMultipleSelection = false
+        p.directoryURL = URL(fileURLWithPath: NSHomeDirectory() + "/Downloads/API")
+        guard p.runModal() == .OK, let url = p.url else { return }
+        Task { @MainActor in
+            guard let j = await Queen.shared.json("/api/capi/key", body: ["path": url.path]) else {
+                self.keyNote = "Queen did not answer"
+                return
+            }
+            if (j["ok"] as? Bool) == true, let l = j["last4"] as? String {
+                self.keyNote = "API key loaded (…\(l))"
+                await self.loadCredit()
+            } else {
+                self.keyNote = (j["error"] as? String) ?? "No Anthropic API key (sk-ant-...) in that file."
+            }
+        }
+    }
+
     /// CLOSE deletes the conversation and its history: one confirmation first.
     @MainActor
     func closeConv(_ c: ConvMeta) {
@@ -238,8 +264,21 @@ struct CapiHeader: View {
             HStack(spacing: 4) {
                 Text(c.creditText.replacingOccurrences(of: " ", with: "\u{00A0}")).foregroundStyle(Ink.red).padding(.horizontal, 6)
                     .accessibilityIdentifier("capi-credit")
+                Image(systemName: "gearshape")                 // v13: the API key file (file picker, key read by shape)
+                    .font(.system(size: 13, weight: .regular)).foregroundStyle(Ink.text)
+                    .padding(.horizontal, 4).padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                    .onTapGesture { c.pickKeyFile() }
+                    .axButton("API key file", id: "capi-key-gear") { c.pickKeyFile() }
+                    .pressHover()
+                    .help("Choose the file with your Anthropic API key (sk-ant-…); other text around it is fine")
                 Text(String(format: "this conversation $%.4f", c.total).replacingOccurrences(of: " ", with: "\u{00A0}"))
                     .foregroundStyle(Ink.dim)
+                if !c.keyNote.isEmpty {
+                    Text(c.keyNote).foregroundStyle(c.keyNote.hasPrefix("API key loaded") ? Ink.green : Ink.red)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("capi-key-note")
+                }
                 Spacer(minLength: 4)
                 Word(text: "CONVERSATIONS", id: "capi-conversations", color: showRooms ? Ink.accent : Ink.text,
                      help: "Your CAPI conversations: switch, start, stop, close") {

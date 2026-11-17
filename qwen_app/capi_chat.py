@@ -16,7 +16,8 @@ total_cost_usd in a result is cumulative for the process: the ledger books the d
 Routes (/api/capi/): GET list | get?id= | credit | folders ; POST new {cwd?,model?} | settings {id,model,cwd} |
   start {id} | stop {id} | close {id} (= delete) | send {id,text} -> {ok} at once (the answer lands in the file) |
   turn {id,text} -> NDJSON {"text":..} {"tool":..} {"cost":c,"total":t,"left":l} {"error":..} {"done":1} |
-  ask {text,cwd?,model?,id?} -> JSON {answer,cost,id} (waits, for Queen's skill capi.md)
+  ask {text,cwd?,model?,id?} -> JSON {answer,cost,id} (waits, for Queen's skill capi.md) |
+  key {path} -> {ok,last4} (v13 gear: the key is taken out of the file by shape, kept in ~/.groq/capi_key 0600)
 Files: ~/.groq/capi/<id>.json {id,title,model,cwd,session,started,total,messages:[{role:marko|claude|tool,text,cost?}]}
   (the CAPI rooms of v11 are the same files: they are the conversations now, nothing to migrate)
 """
@@ -82,13 +83,52 @@ def _ok_cwd(cwd):
     return p if (p == home or p.startswith(home + os.sep)) and os.path.isdir(p) else DEFAULT_CWD
 
 
+KEY_FILE = Path.home() / ".groq" / "capi_key"      # the gear's key (0600, never printed, never in git)
+
+
+def _anthropic_key_in(text):
+    """The ONE key-by-shape reader (auto_updater.extract_multi_provider_keys): sk-ant-... found in any noisy text."""
+    try:
+        from auto_updater import extract_multi_provider_keys
+        keys = extract_multi_provider_keys(text or "").get("anthropic") or []
+    except Exception:
+        keys = re.findall(r"\bsk-ant-[A-Za-z0-9_-]{20,}\b", text or "")
+    return keys[0] if keys else ""
+
+
 def _key():
+    """The gear's file first (~/.groq/capi_key), else the ~/Downloads/API file named *100dolara*."""
+    try:
+        k = _anthropic_key_in(KEY_FILE.read_text(errors="ignore"))
+        if k:
+            return k
+    except Exception:
+        pass
     for f in glob.glob(str(Path.home() / "Downloads" / "API" / "*")):
         if "100dolara" in os.path.basename(f).lower():
-            m = re.search(r"sk-\S+", open(f, errors="ignore").read())
-            if m:
-                return m.group(0)
+            k = _anthropic_key_in(open(f, errors="ignore").read())
+            if k:
+                return k
     return ""
+
+
+def load_key_file(path):
+    """The gear: read a file Marko picked, take the Anthropic key out of it by shape, keep it in ~/.groq/capi_key."""
+    f = Path(os.path.expanduser(path or ""))
+    if not f.is_file():
+        return {"ok": False, "error": "no such file"}
+    if f.stat().st_size > 2_000_000:
+        return {"ok": False, "error": "file too big for a key file"}
+    k = _anthropic_key_in(f.read_text(errors="ignore"))
+    if not k:
+        return {"ok": False, "error": "No Anthropic API key (sk-ant-...) in that file."}
+    KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = KEY_FILE.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as w:
+        w.write(k + "\n")
+    os.replace(tmp, KEY_FILE)
+    return {"ok": True, "last4": k[-4:]}
 
 
 def _credit_left():
@@ -374,6 +414,11 @@ def register(app):
     @app.get("/api/capi/credit")
     def capi_credit():
         return jsonify({"left": _credit_left(), "has_key": bool(_key())})
+
+    @app.post("/api/capi/key")
+    def capi_key():
+        """{path} of a key file -> {ok, last4} or {ok:false, error}. The key itself never travels or prints."""
+        return jsonify(load_key_file(body().get("path", "")))
 
     @app.get("/api/capi/folders")
     def capi_folders():
