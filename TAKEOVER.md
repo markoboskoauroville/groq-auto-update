@@ -17,7 +17,7 @@ too) and the Swift window gets a TRIPLE mode.
 
 **Plan (tick each, commit+push after each):**
 1. [x] Request saved in momentaryupdates.md + this section.
-2. [ ] `qwen_app/triple_chat.py`: store `~/.groq/triple/<id>.json` {id,title,claude_via,claude_model,last_addressed,messages:[{speaker:marko|queen|claude,text,ts}]};
+2. [x] `qwen_app/triple_chat.py`: store `~/.groq/triple/<id>.json` {id,title,claude_via,claude_model,last_addressed,messages:[{speaker:marko|queen|claude,text,ts}]};
    routes GET /api/triple/list, GET /api/triple/get?id=, POST /api/triple/new, POST /api/triple/settings {id,claude_via,claude_model},
    POST /api/triple/turn {id,text,to:queen|claude|both|auto} -> NDJSON lines {"speaker":..,"start":1} / {"t":tok} /
    {"need_consent":msg} / {"done":1}. Addressing parser (Queen/Qwen/Quinn, Claude/Cloud/Klod; default last addressed).
@@ -31,7 +31,7 @@ too) and the Swift window gets a TRIPLE mode.
 6. [ ] version.json 9, LESSONS.md, skill groq-ai-studio section, ~/Downloads/API PROJECTS.md line; ./install.sh;
    `mac_app/install.sh v9`; Queen restarted.
 
-**Where we are:** step 1 done.
+**Where we are:** steps 1-2 done (triple_chat.py written, py_compile ok, `register(app, pool, build_queen_system_prompt, record_spend, local_command_answer, after_turn, default_model, max_tokens)`). Left: 3 register + install.sh, 4 Swift, 5 skill, 6 release. Trap: Claude models have no rate in get_model_rates, so record_spend books them at its fallback rate (cost approximate).
 
 **Hand-over (17.11.2026, plan at 1%):** Marko: "And since we are losing the credits soon, only 1%, please give a task to Queen and
 API through our Queen API of Claude to finish updating the app. So they need to do, you just need to save this 1% as much as possible."
