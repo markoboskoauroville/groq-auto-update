@@ -1,17 +1,28 @@
 """CAPI tab (17.11.2026): chat with Claude Code on Marko's $100 API credit, the same run `capi` does.
 
-Marko: "can queen be used as capi ... add capi tab to queen software so i can have nicer ui". Each turn runs headless
-`claude -p --model M --permission-mode auto --session-id|--resume <uuid> --output-format stream-json --verbose` with
-ANTHROPIC_API_KEY from the ~/Downloads/API file named *100dolara* (never printed). The $100 promotional credit pays
-headless runs only. Every run is written to ~/.cache/claude-api-ledger.jsonl (ONE credit number: api_credit.left()).
+Marko: "can queen be used as capi ... add capi tab to queen software so i can have nicer ui". Then (v12, 17.11.2026):
+"Instead of room, make a new conversation and conversations ... each conversation should start its own process ... running
+in the background as a parallel process ... start, stop ... close".
 
-Routes (/api/capi/): GET list | get?id= | credit | folders ; POST new {cwd?} | settings {id,model,cwd} | stop {id} |
+CONVERSATIONS: each one is its own long-lived background process
+`claude -p --model M --permission-mode auto --session-id|--resume <uuid> --input-format stream-json
+ --output-format stream-json --verbose` (ANTHROPIC_API_KEY from the ~/Downloads/API file named *100dolara*, never printed).
+A reader thread stores every answer in the conversation file as it arrives, whether the window shows it or not, so several
+conversations run in parallel. START = spawn the process (resume the Claude session: it reads the whole history), STOP =
+kill it (history kept), CLOSE = stop + delete the file and its Claude session file. After a backend restart nothing runs;
+sending to a stopped conversation starts it. Every result is written to ~/.cache/claude-api-ledger.jsonl (api_credit).
+total_cost_usd in a result is cumulative for the process: the ledger books the difference.
+
+Routes (/api/capi/): GET list | get?id= | credit | folders ; POST new {cwd?,model?} | settings {id,model,cwd} |
+  start {id} | stop {id} | close {id} (= delete) | send {id,text} -> {ok} at once (the answer lands in the file) |
   turn {id,text} -> NDJSON {"text":..} {"tool":..} {"cost":c,"total":t,"left":l} {"error":..} {"done":1} |
-  ask {text,cwd?,model?,id?} -> JSON {answer,cost,id} (non streaming, for Queen's skill capi.md)
-Rooms: ~/.groq/capi/<id>.json {id,title,model,cwd,session,started,total,messages:[{role:marko|claude|tool,text,cost?}]}
+  ask {text,cwd?,model?,id?} -> JSON {answer,cost,id} (waits, for Queen's skill capi.md)
+Files: ~/.groq/capi/<id>.json {id,title,model,cwd,session,started,total,messages:[{role:marko|claude|tool,text,cost?}]}
+  (the CAPI rooms of v11 are the same files: they are the conversations now, nothing to migrate)
 """
 from __future__ import annotations
 
+import atexit
 import glob
 import json
 import os
@@ -31,7 +42,6 @@ MODELS = ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5", "claude-fa
 DEFAULT_MODEL = "claude-sonnet-5-5"
 DEFAULT_CWD = str(Path.home() / "Developer" / "claude-code")
 LEDGER = Path.home() / ".cache" / "claude-api-ledger.jsonl"
-_procs: dict[str, subprocess.Popen] = {}
 _lock = threading.Lock()
 
 
@@ -102,78 +112,255 @@ def _ledger(cost, prompt, error=False):
                                 "error": error}) + "\n")
 
 
-def run_turn(room, text):
-    """Yield event dicts for one run; the room is updated and saved as it goes."""
-    key = _key()
-    if not key:
-        yield {"error": "no key file (100dolara) in ~/Downloads/API"}
-        return
-    room["messages"].append({"role": "marko", "text": text})
-    if room.get("title") == "CAPI chat":
-        room["title"] = text.strip().splitlines()[0][:48] or "CAPI chat"
-    _save(room)
-    env = {k: v for k, v in os.environ.items() if not (k.startswith("CLAUDECODE") or k.startswith("CLAUDE_CODE_"))}
-    env["ANTHROPIC_API_KEY"] = key
-    sess = ["--resume", room["session"]] if room.get("started") else ["--session-id", room["session"]]
-    cmd = ["claude", "-p", "--model", room["model"], "--permission-mode", "auto", *sess,
-           "--output-format", "stream-json", "--verbose", text]
-    cost = 0.0
-    got_result = False
-    try:
-        p = subprocess.Popen(cmd, cwd=room["cwd"], env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                             stderr=subprocess.DEVNULL, text=True, bufsize=1)
-    except Exception as exc:
-        yield {"error": f"could not start claude: {exc}"}
-        return
-    with _lock:
-        _procs[room["id"]] = p
-    parts = []
-    try:
-        for line in p.stdout:
+def _session_file(session):
+    """Claude Code's own transcript of this session, wherever its project folder is."""
+    if not session:
+        return None
+    hits = glob.glob(str(Path.home() / ".claude" / "projects" / "*" / (session + ".jsonl")))
+    return Path(hits[0]) if hits else None
+
+
+class Conv:
+    """One conversation's background claude process and its reader thread."""
+
+    def __init__(self, room):
+        self.room = room
+        self.lock = threading.RLock()
+        self.proc = None
+        self.busy = False
+        self.cum = 0.0            # cumulative cost reported by this process
+        self.prompt = ""          # the turn being answered (ledger text)
+        self.error = ""
+        self.primer = False       # history exists but Claude's session is gone: send it with the first message
+        self.done = threading.Condition(self.lock)
+        self.turns = 0
+        self.stopping = False     # STOP pressed: the end of the process is not an error
+
+    def save(self):
+        with self.lock:
+            self.room["updated"] = _now()
+            _save(self.room)
+
+    def running(self):
+        return bool(self.proc and self.proc.poll() is None)
+
+    def start(self):
+        with self.lock:
+            if self.running():
+                return True
+            key = _key()
+            if not key:
+                self.error = "no key file (100dolara) in ~/Downloads/API"
+                return False
+            r = self.room
+            if not os.path.isdir(r.get("cwd") or ""):
+                r["cwd"] = DEFAULT_CWD
+            if _session_file(r.get("session")):
+                sess = ["--resume", r["session"]]
+                self.primer = False
+            else:
+                r["session"] = str(uuid.uuid4())
+                sess = ["--session-id", r["session"]]
+                self.primer = any(m.get("role") in ("marko", "claude") for m in r.get("messages", []))
+            env = {k: v for k, v in os.environ.items() if not (k.startswith("CLAUDECODE") or k.startswith("CLAUDE_CODE_"))}
+            env["ANTHROPIC_API_KEY"] = key
+            cmd = ["claude", "-p", "--model", r["model"], "--permission-mode", "auto", *sess,
+                   "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"]
+            (ROOT / "logs").mkdir(parents=True, exist_ok=True)
+            err = open(ROOT / "logs" / (r["id"] + ".err"), "w")
             try:
-                d = json.loads(line)
+                self.proc = subprocess.Popen(cmd, cwd=r["cwd"], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                             stderr=err, text=True, bufsize=1, start_new_session=True)
+            except Exception as exc:
+                self.error = f"could not start claude: {exc}"
+                return False
+            finally:
+                err.close()
+            self.cum = 0.0
+            self.busy = False
+            self.error = ""
+            self.stopping = False
+            _save(r)
+            threading.Thread(target=self._read, args=(self.proc,), daemon=True).start()
+            return True
+
+    def send(self, text):
+        with self.lock:
+            if not self.start():
+                return False
+            r = self.room
+            r["messages"].append({"role": "marko", "text": text})
+            if r.get("title") in ("CAPI chat", "", None):
+                r["title"] = text.strip().splitlines()[0][:48] or "CAPI chat"
+            payload = text
+            if self.primer:
+                hist = "\n\n".join(f'{"Marko" if m["role"] == "marko" else "Claude"}: {m["text"]}'
+                                    for m in r["messages"][:-1] if m.get("role") in ("marko", "claude"))
+                payload = ("Our earlier conversation (stored by Queen; your own session file was gone), for context:\n\n"
+                           + hist[-30000:] + "\n\n---\nNow: " + text)
+                self.primer = False
+            self.prompt = text
+            self.busy = True
+            self.error = ""
+            self.save()
+            try:
+                self.proc.stdin.write(json.dumps({"type": "user", "message": {"role": "user", "content": payload}}) + "\n")
+                self.proc.stdin.flush()
+            except Exception as exc:
+                self.busy = False
+                self.error = f"the process did not take the message: {exc}"
+                return False
+            return True
+
+    def stop(self):
+        with self.lock:
+            p = self.proc
+            self.stopping = True
+        if p and p.poll() is None:
+            try:
+                os.killpg(p.pid, 15)
             except Exception:
-                continue
-            if d.get("type") == "assistant":
-                for b in (d.get("message") or {}).get("content") or []:
-                    if b.get("type") == "text" and (b.get("text") or "").strip():
-                        parts.append(b["text"].strip())
-                        room["messages"].append({"role": "claude", "text": b["text"].strip()})
-                        yield {"text": b["text"].strip()}
-                    elif b.get("type") == "tool_use":
-                        i = b.get("input") or {}
-                        t = f'{b.get("name", "tool")} {str(i.get("description") or i.get("command") or i.get("file_path") or i.get("pattern") or "")[:90]}'.strip()
-                        room["messages"].append({"role": "tool", "text": t})
-                        yield {"tool": t}
-            elif d.get("type") == "result":
-                got_result = True
-                cost = float(d.get("total_cost_usd") or 0)
-                if d.get("is_error"):
-                    yield {"error": str(d.get("result"))[:300]}
-        p.wait(timeout=20)
-    except Exception:
-        pass
-    finally:
-        with _lock:
-            _procs.pop(room["id"], None)
-        if p.poll() is None:
-            p.kill()
-    if parts:
-        for m in reversed(room["messages"]):
-            if m["role"] == "claude":
-                m["cost"] = round(cost, 4)
+                p.terminate()
+            try:
+                p.wait(timeout=5)
+            except Exception:
+                try:
+                    os.killpg(p.pid, 9)
+                except Exception:
+                    p.kill()
+        return bool(p)
+
+    def _read(self, p):
+        try:
+            for line in p.stdout:
+                try:
+                    d = json.loads(line)
+                except Exception:
+                    continue
+                t = d.get("type")
+                with self.lock:
+                    if t == "assistant":
+                        for b in (d.get("message") or {}).get("content") or []:
+                            if b.get("type") == "text" and (b.get("text") or "").strip():
+                                self.room["messages"].append({"role": "claude", "text": b["text"].strip()})
+                            elif b.get("type") == "tool_use":
+                                i = b.get("input") or {}
+                                what = str(i.get("description") or i.get("command") or i.get("file_path") or i.get("pattern") or "")[:90]
+                                self.room["messages"].append({"role": "tool", "text": f'{b.get("name", "tool")} {what}'.strip()})
+                        self.save()
+                    elif t == "result":
+                        c = float(d.get("total_cost_usd") or 0)
+                        cost = c - self.cum if c >= self.cum else c
+                        self.cum = c
+                        cost = round(max(cost, 0.0), 6)
+                        if cost:
+                            _ledger(cost, self.prompt or "(background)")
+                            self.room["total"] = round(self.room.get("total", 0.0) + cost, 4)
+                            for m in reversed(self.room["messages"]):
+                                if m["role"] == "claude":
+                                    m["cost"] = round(m.get("cost", 0) + cost, 4)
+                                    break
+                                if m["role"] == "marko":
+                                    break
+                        if d.get("is_error"):
+                            self.error = str(d.get("result"))[:300]
+                        self.room["started"] = True
+                        self.busy = False
+                        self.turns += 1
+                        self.save()
+                        self.done.notify_all()
+        except Exception:
+            pass
+        with self.lock:
+            if self.proc is p:
+                was = self.busy
+                self.busy = False
+                if was and not self.error:
+                    self.error = "stopped"
+                if not self.error and not self.stopping:
+                    try:                  # it ended by itself: the last real stderr line says why (not the ⚠ notices)
+                        p.wait(timeout=5)
+                        lines = [x for x in (ROOT / "logs" / (self.room["id"] + ".err")).read_text().splitlines()
+                                 if x.strip() and not x.lstrip().startswith("⚠")]
+                        if p.returncode not in (0, None) or lines:
+                            self.error = (lines[-1] if lines else f"claude ended ({p.returncode})")[:300]
+                    except Exception:
+                        pass
+                self.save()
+                self.done.notify_all()
+
+    def state(self):
+        with self.lock:
+            return {"running": self.running(), "busy": self.busy and self.running(), "error": self.error}
+
+
+_convs: dict[str, Conv] = {}
+
+
+def _conv(rid, create=True):
+    """The live object of a conversation (made from its file on first use)."""
+    with _lock:
+        c = _convs.get(rid)
+        if c or not create:
+            return c
+        room = _load(rid)
+        if not room:
+            return None
+        c = _convs[rid] = Conv(room)
+        return c
+
+
+def _room(rid):
+    c = _conv(rid, create=False)
+    if c:
+        with c.lock:
+            return json.loads(json.dumps(c.room)), c.state()
+    r = _load(rid)
+    return r, {"running": False, "busy": False, "error": ""}
+
+
+def _stop_all():
+    for c in list(_convs.values()):
+        c.stop()
+
+
+atexit.register(_stop_all)
+
+
+def run_turn(room, text):
+    """Streaming form of one turn (the old /api/capi/turn): send, then yield what lands until the answer is done."""
+    c = _conv(room["id"])
+    if not c:
+        yield {"error": "no such conversation"}
+        return
+    with c.lock:
+        n = len(c.room["messages"]) + 1
+        if not c.send(text):
+            yield {"error": c.error or "could not send"}
+            return
+    while True:
+        with c.lock:                        # never hold the lock across a yield: the reader thread must go on
+            c.done.wait(timeout=0.5)
+            new = [dict(m) for m in c.room["messages"][n:]]
+            n += len(new)
+            busy = c.busy
+        for m in new:
+            yield {"text": m["text"]} if m["role"] == "claude" else {"tool": m["text"]}
+        if not busy:
+            break
+    with c.lock:
+        cost = 0.0
+        for m in reversed(c.room["messages"]):
+            if m["role"] == "marko":
                 break
-    if got_result:
-        room["started"] = True
-    stopped = not got_result
-    if cost:
-        _ledger(cost, text)
-        room["total"] = round(room.get("total", 0.0) + cost, 4)
-    room["updated"] = _now()
-    _save(room)
-    if stopped:
-        yield {"error": "stopped"}
-    yield {"cost": round(cost, 4), "total": room["total"], "left": _credit_left()}
+            if m["role"] == "claude":
+                cost = m.get("cost", 0.0)
+                break
+        err = c.error
+        total = c.room.get("total", 0.0)
+    if err:
+        yield {"error": err}
+    yield {"cost": round(cost, 4), "total": total, "left": _credit_left()}
     yield {"done": 1}
 
 
@@ -201,61 +388,102 @@ def register(app):
         rooms = []
         for f in ROOT.glob("*.json") if ROOT.is_dir() else []:
             try:
-                r = json.loads(f.read_text())
+                r, st = _room(f.stem)
                 rooms.append({"id": r["id"], "title": r.get("title", ""), "count": len(r.get("messages", [])),
-                              "updated": r.get("updated", 0)})
+                              "updated": r.get("updated", 0), "model": r.get("model", ""), **st})
             except Exception:
                 pass
         rooms.sort(key=lambda r: -r["updated"])
-        return jsonify({"rooms": rooms})
+        return jsonify({"rooms": rooms, "conversations": rooms})
 
     @app.get("/api/capi/get")
     def capi_get():
-        r = _load(request.args.get("id", ""))
-        return (jsonify({"room": r}) if r else (jsonify({"error": "no such room"}), 404))
+        r, st = _room(request.args.get("id", ""))
+        return (jsonify({"room": r, **st}) if r else (jsonify({"error": "no such conversation"}), 404))
 
     @app.post("/api/capi/new")
     def capi_new():
         b = body()
-        return jsonify({"room": _new(b.get("cwd"), b.get("model"))})
+        return jsonify({"room": _new(b.get("cwd"), b.get("model")), "running": False, "busy": False, "error": ""})
 
     @app.post("/api/capi/delete")
+    @app.post("/api/capi/close", endpoint="capi_close")
     def capi_delete():
-        try:
-            _path(body().get("id", "")).unlink()
-        except Exception:
-            pass
-        return jsonify({"ok": True})
+        rid = re.sub(r"[^a-zA-Z0-9_-]", "", body().get("id", ""))
+        c = _conv(rid, create=False)
+        if c:
+            c.stop()
+        with _lock:
+            _convs.pop(rid, None)
+        r = _load(rid)
+        sf = _session_file((r or {}).get("session"))
+        for f in (_path(rid), ROOT / "logs" / (rid + ".err"), sf):
+            try:
+                if f:
+                    f.unlink()
+            except Exception:
+                pass
+        return jsonify({"ok": bool(r), "closed": rid})
 
     @app.post("/api/capi/settings")
     def capi_settings():
         b = body()
-        r = _load(b.get("id", "")) or _new(b.get("cwd"), b.get("model"))
-        if b.get("model") in MODELS:
-            r["model"] = b["model"]
-        if b.get("cwd"):
-            r["cwd"] = _ok_cwd(b["cwd"])
-        _save(r)
-        return jsonify({"room": r})
+        c = _conv(b.get("id", ""))
+        if not c:
+            r = _new(b.get("cwd"), b.get("model"))
+            c = _conv(r["id"])
+        note = ""
+        restart = False
+        with c.lock:
+            r = c.room
+            if b.get("model") in MODELS and b["model"] != r.get("model"):
+                r["model"] = b["model"]
+                restart = c.running() and not c.busy
+            if b.get("cwd"):
+                want = _ok_cwd(b["cwd"])
+                if want != r.get("cwd"):
+                    if _session_file(r.get("session")):
+                        note = "The folder is fixed once a conversation has started; NEW CONVERSATION for another folder."
+                    else:
+                        r["cwd"] = want
+            c.save()
+        if restart:
+            c.stop()
+            c.start()
+        rr, st = _room(c.room["id"])
+        return jsonify({"room": rr, **st, "notice": note})
+
+    @app.post("/api/capi/start")
+    def capi_start():
+        c = _conv(body().get("id", ""))
+        if not c:
+            return jsonify({"error": "no such conversation"}), 404
+        ok = c.start()
+        return jsonify({"ok": ok, **c.state()})
 
     @app.post("/api/capi/stop")
     def capi_stop():
-        with _lock:
-            p = _procs.get(body().get("id", ""))
-        if p and p.poll() is None:
-            p.kill()
-        return jsonify({"stopped": bool(p)})
+        c = _conv(body().get("id", ""), create=False)
+        stopped = c.stop() if c else False
+        return jsonify({"stopped": stopped, **(c.state() if c else {"running": False, "busy": False, "error": ""})})
+
+    @app.post("/api/capi/send")
+    def capi_send():
+        b = body()
+        text = (b.get("text") or "").strip()
+        c = _conv(b.get("id", ""))
+        if not c or not text:
+            return jsonify({"error": "no such conversation" if not c else "empty"}), 400
+        ok = c.send(text)
+        return jsonify({"ok": ok, **c.state()})
 
     @app.post("/api/capi/turn")
     def capi_turn():
         b = body()
         text = (b.get("text") or "").strip()
-        r = _load(b.get("id", ""))
-        if not r:
-            r = _new(b.get("cwd"), b.get("model"))
-            r["id"] = re.sub(r"[^a-zA-Z0-9_-]", "", b.get("id") or "") or r["id"]
         if not text:
             return jsonify({"error": "empty"}), 400
+        r = _load(b.get("id", "")) or _new(b.get("cwd"), b.get("model"))
         return Response((ndj(e) for e in run_turn(r, text)), mimetype="application/x-ndjson",
                         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 

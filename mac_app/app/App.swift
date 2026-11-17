@@ -8,7 +8,7 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 
-let VERSION = 11
+let VERSION = 12
 let APP_NAME = "Queen"
 
 enum Ink {
@@ -363,7 +363,7 @@ struct Root: View {
             HStack(spacing: 0) {
                 if cp.active {
                     if showCapiRooms {
-                        CapiRoomList().frame(width: 240)
+                        CapiRoomList().frame(width: 330)
                         Rectangle().fill(Ink.line).frame(width: 1)
                     }
                     CapiConversation()

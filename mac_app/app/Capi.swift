@@ -3,6 +3,7 @@
 // what `capi` runs (headless claude -p, one session per room, working folder, model) and streams the events here.
 // One module: the list, bubbles, Markdown and speaker are the shared ones (MessageList, Bubble, MarkdownView, SpeakerButton).
 import SwiftUI
+import AppKit
 import Foundation
 
 struct FolderItem: Identifiable, Equatable {
@@ -11,22 +12,35 @@ struct FolderItem: Identifiable, Equatable {
     let path: String
 }
 
+/// One stored CAPI conversation as the list shows it (v12: rooms became conversations, each its own background process).
+struct ConvMeta: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let count: Int
+    let running: Bool
+    let busy: Bool
+    let error: String
+}
+
 final class Capi: ObservableObject {
     static let shared = Capi()
 
     @Published var active = false
-    @Published var roomId = ""
+    @Published var convId = ""
     @Published var title = ""
     @Published var messages: [Msg] = []          // role: marko | claude | tool
-    @Published var rooms: [RoomMeta] = []
+    @Published var convs: [ConvMeta] = []
     @Published var folders: [FolderItem] = []
     @Published var model = "claude-sonnet-5-5"
     @Published var cwd = ""
     @Published var total = 0.0
     @Published var left: Double? = nil
-    @Published var busy = false
+    @Published var busy = false                  // the conversation on screen is answering
+    @Published var running = false              // the conversation on screen has its process
     @Published var notice = ""
-    private var task: Task<Void, Never>?
+    private var poller: Task<Void, Never>?
+    private var shownSig = ""                    // what is on screen: count + last text, so a poll redraws only on change
+    private var busyIds: Set<String> = []
 
     var creditText: String { left.map { String(format: "API ($%.2f left)", $0) } ?? "API ($ ?)" }
     var folderName: String { (cwd as NSString).lastPathComponent }
@@ -49,9 +63,25 @@ final class Capi: ObservableObject {
                 return FolderItem(name: n, path: p)
             }
         }
-        if !roomId.isEmpty { return }
-        await loadRooms()
-        if let first = rooms.first { await open(first.id) } else { await newRoom() }
+        startPolling()
+        if !convId.isEmpty { return }
+        await loadConvs()
+        if let first = convs.first { await open(first.id) } else { await newConversation() }
+    }
+
+    /// While the tab is open: the list (running / answering) and the conversation on screen follow the server, so
+    /// answers of every conversation land in their own files and show when you switch to them.
+    @MainActor
+    private func startPolling() {
+        if poller != nil { return }
+        poller = Task { @MainActor in
+            while self.active && !Task.isCancelled {
+                await self.loadConvs()
+                if !self.convId.isEmpty { await self.reload() }
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+            }
+            self.poller = nil
+        }
     }
 
     @MainActor
@@ -60,42 +90,66 @@ final class Capi: ObservableObject {
     }
 
     @MainActor
-    func loadRooms() async {
+    func loadConvs() async {
         guard let j = await Queen.shared.json("/api/capi/list"), let list = j["rooms"] as? [[String: Any]] else { return }
-        rooms = list.compactMap { r in
+        let l: [ConvMeta] = list.compactMap { r in
             guard let id = r["id"] as? String else { return nil }
-            return RoomMeta(id: id, title: (r["title"] as? String) ?? "CAPI chat", count: (r["count"] as? Int) ?? 0)
+            return ConvMeta(id: id, title: (r["title"] as? String) ?? "CAPI chat", count: (r["count"] as? Int) ?? 0,
+                            running: (r["running"] as? Bool) ?? false, busy: (r["busy"] as? Bool) ?? false,
+                            error: (r["error"] as? String) ?? "")
         }
+        let nowBusy = Set(l.filter { $0.busy }.map { $0.id })
+        if !busyIds.subtracting(nowBusy).isEmpty { await loadCredit() }     // an answer finished somewhere: the credit moved
+        busyIds = nowBusy
+        if l != convs { convs = l }
     }
 
     @MainActor
-    private func apply(_ room: [String: Any]) {
-        roomId = (room["id"] as? String) ?? roomId
+    private func apply(_ j: [String: Any], force: Bool = false) {
+        guard let room = j["room"] as? [String: Any] else { return }
+        let ms = (room["messages"] as? [[String: Any]]) ?? []
+        let id = (room["id"] as? String) ?? convId
+        let sig = id + "|\(ms.count)|" + (((ms.last?["text"] as? String) ?? "").count.description)
+            + "|" + (((ms.last?["cost"] as? Double) ?? 0).description)
+        convId = id
         title = (room["title"] as? String) ?? "CAPI chat"
         model = (room["model"] as? String) ?? model
         cwd = (room["cwd"] as? String) ?? cwd
         total = (room["total"] as? Double) ?? 0
-        let ms = (room["messages"] as? [[String: Any]]) ?? []
-        messages = ms.compactMap { m in
-            guard let r = m["role"] as? String else { return nil }
-            return Msg(role: r, content: (m["text"] as? String) ?? "", cost: (m["cost"] as? Double) ?? 0)
+        busy = (j["busy"] as? Bool) ?? false
+        running = (j["running"] as? Bool) ?? false
+        let e = (j["error"] as? String) ?? ""
+        notice = e.isEmpty ? "" : (e == "stopped" ? "Stopped." : "ERROR: " + e)
+        if force || sig != shownSig {
+            shownSig = sig
+            messages = ms.compactMap { m in
+                guard let r = m["role"] as? String else { return nil }
+                return Msg(role: r, content: (m["text"] as? String) ?? "", cost: (m["cost"] as? Double) ?? 0)
+            }
         }
     }
 
+    /// Switch the view to another conversation: never waits for, stops or blocks the one that is answering.
     @MainActor
     func open(_ id: String) async {
-        guard !busy, let j = await Queen.shared.json("/api/capi/get?id=" + id), let room = j["room"] as? [String: Any] else { return }
-        apply(room)
+        guard let j = await Queen.shared.json("/api/capi/get?id=" + id) else { return }
+        apply(j, force: true)
     }
 
     @MainActor
-    func newRoom() async {
-        guard !busy else { return }
+    private func reload() async {
+        let id = convId
+        guard let j = await Queen.shared.json("/api/capi/get?id=" + id), id == convId else { return }
+        apply(j)
+    }
+
+    @MainActor
+    func newConversation() async {
         let body: [String: Any] = ["cwd": cwd, "model": model]
-        guard let j = await Queen.shared.json("/api/capi/new", body: body), let room = j["room"] as? [String: Any] else { return }
-        apply(room)
+        guard let j = await Queen.shared.json("/api/capi/new", body: body) else { return }
+        apply(j, force: true)
         notice = ""
-        await loadRooms()
+        await loadConvs()
     }
 
     @MainActor
@@ -106,68 +160,76 @@ final class Capi: ObservableObject {
 
     @MainActor
     private func saveSettings() {
-        let body: [String: Any] = ["id": roomId, "model": model, "cwd": cwd]
-        Task { _ = await Queen.shared.json("/api/capi/settings", body: body) }
-    }
-
-    @MainActor
-    func send(_ text: String) {
-        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !busy, !roomId.isEmpty, !t.isEmpty else { return }
-        messages.append(Msg(role: "marko", content: t))
-        busy = true
-        notice = ""
-        task = Task { @MainActor in
-            await self.stream(t)
-            self.busy = false
-            await self.reload()
-            await self.loadCredit()
-            await self.loadRooms()
+        let body: [String: Any] = ["id": convId, "model": model, "cwd": cwd]
+        Task { @MainActor in
+            guard let j = await Queen.shared.json("/api/capi/settings", body: body) else { return }
+            apply(j, force: true)
+            if let n = j["notice"] as? String, !n.isEmpty { notice = n }
         }
     }
 
-    /// Stop: the server kills the claude run, then the stream ends by itself.
+    /// Send: the server writes it to the conversation's own process (started if it was not); the answer lands in its file.
     @MainActor
-    func stop() {
-        let id = roomId
-        Task { _ = await Queen.shared.json("/api/capi/stop", body: ["id": id]) }
+    func send(_ text: String) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !busy, !convId.isEmpty, !t.isEmpty else { return }
+        messages.append(Msg(role: "marko", content: t))
+        busy = true
+        notice = ""
+        let id = convId
+        Task { @MainActor in
+            let j = await Queen.shared.json("/api/capi/send", body: ["id": id, "text": t], timeout: 60)
+            if let e = j?["error"] as? String, !e.isEmpty, id == self.convId { self.notice = "ERROR: " + e }
+            await self.loadConvs()
+            if id == self.convId { await self.reload() }
+        }
+    }
+
+    /// STOP under the input: stops the conversation on screen (its process; the history stays).
+    @MainActor
+    func stop() { stopConv(convId) }
+
+    @MainActor
+    func startConv(_ id: String) {
+        Task { @MainActor in
+            _ = await Queen.shared.json("/api/capi/start", body: ["id": id], timeout: 30)
+            await self.loadConvs()
+            if id == self.convId { await self.reload() }
+        }
     }
 
     @MainActor
-    private func reload() async {
-        guard let j = await Queen.shared.json("/api/capi/get?id=" + roomId), let room = j["room"] as? [String: Any] else { return }
-        apply(room)
+    func stopConv(_ id: String) {
+        Task { @MainActor in
+            _ = await Queen.shared.json("/api/capi/stop", body: ["id": id], timeout: 20)
+            await self.loadConvs()
+            if id == self.convId { await self.reload() }
+        }
     }
 
+    /// CLOSE deletes the conversation and its history: one confirmation first.
     @MainActor
-    private func stream(_ text: String) async {
-        let body: [String: Any] = ["id": roomId, "text": text]
-        guard let r = Queen.shared.request("/api/capi/turn", body: body, timeout: 1800) else { return }
-        do {
-            let (bytes, resp) = try await URLSession.shared.bytes(for: r)
-            if let h = resp as? HTTPURLResponse, h.statusCode >= 400 {
-                notice = "CAPI answered \(h.statusCode)."
-                return
+    func closeConv(_ c: ConvMeta) {
+        let a = NSAlert()
+        a.messageText = "Close \"\(c.title)\"?"
+        a.informativeText = "Its process stops and its whole history is deleted. This cannot be undone."
+        a.addButton(withTitle: "Close")
+        a.addButton(withTitle: "Cancel")
+        a.alertStyle = .warning
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        Task { @MainActor in
+            _ = await Queen.shared.json("/api/capi/close", body: ["id": c.id], timeout: 20)
+            await self.loadConvs()
+            if c.id == self.convId {
+                self.convId = ""
+                if let next = self.convs.first { await self.open(next.id) } else { await self.newConversation() }
             }
-            for try await l in bytes.lines {
-                guard let o = try? JSONSerialization.jsonObject(with: Data(l.utf8)) as? [String: Any] else { continue }
-                if let t = o["text"] as? String { messages.append(Msg(role: "claude", content: t)) }
-                if let t = o["tool"] as? String { messages.append(Msg(role: "tool", content: t)) }
-                if let c = o["cost"] as? Double, let i = messages.lastIndex(where: { $0.role == "claude" }) {
-                    messages[i].cost = c
-                    total = (o["total"] as? Double) ?? total
-                    if let lf = o["left"] as? Double { left = lf }
-                }
-                if let e = o["error"] as? String { notice = e == "stopped" ? "Stopped." : "ERROR: " + e }
-            }
-        } catch {
-            notice = "No answer: \(error.localizedDescription)"
         }
     }
 }
 
 // ---------------------------------------------------------------- the window parts
-/// Top of the tab: the ONE credit number, the working folder, rooms.
+/// Top of the tab: the ONE credit number, the working folder, the conversations.
 struct CapiHeader: View {
     @ObservedObject var c = Capi.shared
     @Binding var showRooms: Bool
@@ -176,14 +238,16 @@ struct CapiHeader: View {
             HStack(spacing: 4) {
                 Text(c.creditText.replacingOccurrences(of: " ", with: "\u{00A0}")).foregroundStyle(Ink.red).padding(.horizontal, 6)
                     .accessibilityIdentifier("capi-credit")
-                Text(String(format: "this room $%.4f", c.total).replacingOccurrences(of: " ", with: "\u{00A0}"))
+                Text(String(format: "this conversation $%.4f", c.total).replacingOccurrences(of: " ", with: "\u{00A0}"))
                     .foregroundStyle(Ink.dim)
                 Spacer(minLength: 4)
-                Word(text: "ROOMS", id: "capi-rooms", color: showRooms ? Ink.accent : Ink.text, help: "Your CAPI rooms") {
+                Word(text: "CONVERSATIONS", id: "capi-conversations", color: showRooms ? Ink.accent : Ink.text,
+                     help: "Your CAPI conversations: switch, start, stop, close") {
                     showRooms.toggle()
-                    if showRooms { Task { await c.loadRooms() } }
+                    if showRooms { Task { await c.loadConvs() } }
                 }
-                Word(text: "NEW ROOM", id: "capi-new-room", help: "A clean conversation: a new Claude Code session") { Task { await c.newRoom() } }
+                Word(text: "NEW CONVERSATION", id: "capi-new-conversation",
+                     help: "A clean conversation: its own Claude Code process") { Task { await c.newConversation() } }
             }
             HStack(spacing: 4) {
                 Text("FOLDER").foregroundStyle(Ink.dim).padding(.horizontal, 6)
@@ -209,7 +273,7 @@ struct CapiConversation: View {
     @ObservedObject var c = Capi.shared
     var body: some View {
         MessageList(messages: c.messages,
-                    empty: "Claude Code on your API credit. Ask for anything; it works in the folder above, remembers the conversation, and shows one line per tool it uses.",
+                    empty: "Claude Code on your API credit. Ask for anything; it works in the folder above, remembers the conversation across days, and shows one line per tool it uses. Several conversations can work at the same time: CONVERSATIONS.",
                     notice: c.notice) { EmptyView() }
     }
 }
@@ -238,7 +302,7 @@ struct CapiInput: View {
                 }
                 Spacer(minLength: 4)
                 if c.busy {
-                    Word(text: "STOP", id: "capi-stop", color: Ink.amber, help: "Stop Claude Code's run") { c.stop() }
+                    Word(text: "STOP", id: "capi-stop", color: Ink.amber, help: "Stop this conversation's process (the history stays)") { c.stop() }
                 } else {
                     let has = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     Word(text: "SEND", id: "capi-send", color: has ? Ink.accent : Ink.grey, help: "Send to Claude Code (Return)") { go() }
@@ -258,28 +322,62 @@ struct CapiInput: View {
     }
 }
 
+/// CONVERSATIONS: every stored conversation. Click the title to switch to it; a green line on the left edge while its
+/// process runs; START (resume from the stored history), STOP (history kept), CLOSE (delete, asks first).
 struct CapiRoomList: View {
     @ObservedObject var c = Capi.shared
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(c.rooms) { r in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(r.title).font(.system(size: 13, weight: r.id == c.roomId ? .bold : .regular))
-                            .foregroundStyle(r.id == c.roomId ? Ink.claude : Ink.text)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text("\(r.count) lines").font(.system(size: 11, design: .monospaced)).foregroundStyle(Ink.dim)
+                ForEach(c.convs) { r in
+                    HStack(alignment: .top, spacing: 0) {
+                        Rectangle().fill(r.running ? Ink.green : Color.clear).frame(width: 4)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(r.title).font(.system(size: 13, weight: r.id == c.convId ? .bold : .regular))
+                                .foregroundStyle(r.id == c.convId ? Ink.claude : Ink.text)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(CapiRoomList.status(r)).font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(r.busy ? Ink.green : (r.error.isEmpty || r.error == "stopped" ? Ink.dim : Ink.red))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.leading, 8).padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                        .onTapGesture { Task { await c.open(r.id) } }
+                        .axButton("Conversation " + r.title, id: "capi-conv-" + r.id,
+                                  value: r.running ? (r.busy ? "answering" : "running") : "stopped") { Task { await c.open(r.id) } }
+                        .pressHover()
+                        HStack(spacing: 0) {
+                            act("START", "Start", r, on: !r.running, color: Ink.green) { c.startConv(r.id) }
+                            act("STOP", "Stop", r, on: r.running, color: Ink.amber) { c.stopConv(r.id) }
+                            act("CLOSE", "Close", r, on: true, color: Ink.red) { c.closeConv(r) }
+                        }
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .padding(.vertical, 6).padding(.trailing, 6)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .contentShape(Rectangle())
-                    .onTapGesture { Task { await c.open(r.id) } }
-                    .axButton("Room " + r.title, id: "capi-room-" + r.id) { Task { await c.open(r.id) } }
-                    .pressHover()
+                    .background(r.id == c.convId ? Ink.bg.opacity(0.6) : Color.clear)
                     Hairline()
                 }
             }
         }
         .background(Ink.panel)
+    }
+
+    static func status(_ r: ConvMeta) -> String {
+        let state = r.busy ? "answering" : (r.running ? "running" : "stopped")
+        return "\(r.count) lines  ·  \(state)"
+    }
+
+    /// One action word after the title: tap + Accessibility button named with the conversation ("Start <title>").
+    @ViewBuilder
+    func act(_ word: String, _ verb: String, _ r: ConvMeta, on: Bool, color: Color, _ action: @escaping () -> Void) -> some View {
+        Text(word).foregroundStyle(on ? color : Ink.grey.opacity(0.5))
+            .padding(.horizontal, 4).padding(.vertical, 3)
+            .contentShape(Rectangle())
+            .onTapGesture { if on { action() } }
+            .axButton(verb + " " + r.title, id: "capi-" + word.lowercased() + "-" + r.id) { if on { action() } }
+            .pressHover()
+            .help(verb == "Start" ? "Start its own process: it reads the whole history and you continue"
+                  : verb == "Stop" ? "Stop its process; the history stays" : "Delete this conversation and its history")
     }
 }
