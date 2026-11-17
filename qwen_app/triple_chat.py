@@ -79,6 +79,18 @@ def new_room(title: str = "") -> dict:
     return room
 
 
+def recover_room(rid: str):
+    """A room id the window still holds but the server lost (deleted, cleaned, new machine): recreate it empty under the
+    same id so the window keeps working instead of showing a bare 404. Returns None only for an empty id."""
+    clean = re.sub(r"[^a-zA-Z0-9_-]", "", rid or "")
+    if not clean:
+        return None
+    room = {"id": clean, "title": "Triple chat", "claude_via": "local", "claude_model": DEFAULT_CLAUDE_MODEL,
+            "last_addressed": "queen", "created": _now(), "updated": _now(), "messages": [], "recovered": True}
+    _save(room)
+    return room
+
+
 def parse_addressing(text: str, last: str = "queen") -> str:
     """queen | claude | both. Names anywhere in the text; none -> whoever was addressed last."""
     q, c = bool(_QUEEN_RE.search(text)), bool(_CLAUDE_RE.search(text))
@@ -384,7 +396,7 @@ def register(app, pool, build_queen_system_prompt, record_spend, local_command_a
     @app.post("/api/triple/settings")
     def triple_settings():
         d = request.get_json(silent=True) or {}
-        room = _load(d.get("id", ""))
+        room = _load(d.get("id", "")) or recover_room(d.get("id", ""))
         if not room:
             return jsonify(ok=False, error="no such room"), 404
         if d.get("claude_via") in ("local", "api"):
@@ -399,7 +411,7 @@ def register(app, pool, build_queen_system_prompt, record_spend, local_command_a
     @app.post("/api/triple/turn")
     def triple_turn():
         d = request.get_json(silent=True) or {}
-        room = _load(d.get("id", ""))
+        room = _load(d.get("id", "")) or recover_room(d.get("id", ""))
         if not room:
             return jsonify(ok=False, error="no such room"), 404
         return Response(run_turn(room, d.get("text", ""), d.get("to", "auto"), bool(d.get("allow_api")),

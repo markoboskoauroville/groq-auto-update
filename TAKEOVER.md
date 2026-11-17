@@ -67,3 +67,9 @@ Resume: run the same command again; the builder starts at the first unticked ste
 model that really loops (Groq 503 and Queen declines to loop); YES-to-API button click in the window (route tested, not the click);
 Fable/Opus models on the API (only Haiku called, to keep it cheap); Queen executing real command lines inside the room;
 the VM copy of the backend; touch/trackpad feel. Cleanup: test room deleted, testclean run, window left at 560 pt.
+
+
+## TRIPLE CHAT — "The room answered 404" (17.11.2026, fixed server-side, no Swift change)
+
+**Cause:** the Swift window sends every message to `POST /api/triple/turn` with the room id it holds. The server returned 404 "no such room" because that room file in `~/.groq/triple/` was gone (`~/.groq/triple` was empty: the test room was deleted during test cleanup while Marko's window still held its id). Un-addressed messages were not the problem (they default to the last addressed speaker, Queen).
+**Fix:** `triple_chat.recover_room(id)`; `/api/triple/turn` and `/api/triple/settings` now recreate a missing room empty under the same id instead of 404 (only an empty id still 404s), so the window carries on and its reload finds the room. Proof: turn on a never-created id returns 200, Queen/Claude stream answers, room then listed. `/api/triple/get` still 404s for unknown ids (read only). Not changed: Swift v10 (a Swift fallback to NEW ROOM on 404 would be nice, left for a later version).
