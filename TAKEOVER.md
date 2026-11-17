@@ -101,3 +101,12 @@ Driver: `tools/triple_demo.py` (front, click, type, shot, ocr; checks the front 
 | Scroll up/down, narrow to 560, wide, close and reopen | history kept; at 560 the status line wraps to two lines (nothing cut) | right | none |
 | Local / Api switch | Local by click works; my click on API missed once (ax-press Api works) | right | none |
 Not done: no `macroskill add` entry (the driver is a Python script, not a stored macro); Queen judged per batch of steps, not before each one; the Claude model buttons were hit by one stray click (Sonnet now). Marko's dictation at 14:59 (about the voice engine Mantra UI) landed in the Queen field; cleared there, full text in ~/Library/Logs/voice-to-text-mantra.log.
+
+
+## CAPI TAB + SPEAKER ICON (17.11.2026, Sonnet headless)
+Marko's request is in momentaryupdates.md. Plan (tick each, commit+push after each):
+1. [ ] One credit number: ledger ~/.cache/claude-api-ledger.jsonl, `capi` writes to it, claude-api-mode status and tools/credit_watch.py agree ($96.66 at 2026-11-17 13:50 minus later spend).
+2. [ ] Backend qwen_app/capi_chat.py: /api/capi/* (rooms, model, cwd, run stream, stop, credit).
+3. [ ] Swift: CAPI mode (Capi.swift) beside TRIPLE, Markdown, tool lines, cost, Stop, model + folder pickers, "API ($NN.NN left)".
+4. [ ] Speaker icon on every response (one shared component), Speechify Beatrice, render-to-file, cache; /api/speak/*.
+5. [ ] queen_skills/capi.md; install; release via GitHub Actions; tests; registry/HANDOVER/credit-watch.md.

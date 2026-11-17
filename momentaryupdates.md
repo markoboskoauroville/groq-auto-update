@@ -147,3 +147,6 @@ Status: in progress (API builder opens the real Queen window, tests Triple Chat,
 
 17.11.2026, Marko (word for word): "Ask builder to show me the user interface and testing like a real person is using it, typing text, and doing other functions. And for that, it needs to use Macro Recorder and API keys through Groq. A Queen model."
 Status: in progress (visible Triple Chat demo by Macro Recorder, Queen as judge; TAKEOVER.md, TRIPLE CHAT — DEMO).
+
+17.11.2026, Marko (word for word): "can queen be used as capi ui can you teach her or add capi tab to queen software so i can have nicer ui also in queen ask worker to add speaker icon at end of each chat response to play audio from chat text using speechify key beatrice voice"
+Status: in progress (CAPI tab + speaker icon; TAKEOVER.md, CAPI TAB section).
