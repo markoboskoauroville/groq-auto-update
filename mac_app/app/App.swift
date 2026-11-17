@@ -445,15 +445,29 @@ struct Root: View {
         .background(Ink.bg)
         .ignoresSafeArea(.container, edges: .top)
         .preferredColorScheme(.dark)
-        .onAppear { UIState.restore(showChats: $showChats, showRooms: $showRooms, showCapiRooms: $showCapiRooms) }
-        .onChange(of: cp.active) { _ in UIState.saveMode() }
-        .onChange(of: tr.active) { _ in UIState.saveMode() }
-        .onChange(of: cp.convId) { UIState.d.set($0, forKey: "ui.capiConv") }
-        .onChange(of: tr.roomId) { UIState.d.set($0, forKey: "ui.tripleRoom") }
-        .onChange(of: Queen.shared.chatId) { UIState.d.set($0, forKey: "ui.chatId") }
-        .onChange(of: showChats) { UIState.d.set($0, forKey: "ui.showChats") }
-        .onChange(of: showRooms) { UIState.d.set($0, forKey: "ui.showRooms") }
-        .onChange(of: showCapiRooms) { UIState.d.set($0, forKey: "ui.showCapiRooms") }
+        .modifier(StateKeeper(showChats: $showChats, showRooms: $showRooms, showCapiRooms: $showCapiRooms))
+    }
+}
+
+/// Persists the screen state (split out of Root: the type checker gives up on one long chain).
+struct StateKeeper: ViewModifier {
+    @Binding var showChats: Bool
+    @Binding var showRooms: Bool
+    @Binding var showCapiRooms: Bool
+    @ObservedObject var cp = Capi.shared
+    @ObservedObject var tr = Triple.shared
+    @ObservedObject var q = Queen.shared
+    func body(content: Content) -> some View {
+        content
+            .onAppear { UIState.restore(showChats: $showChats, showRooms: $showRooms, showCapiRooms: $showCapiRooms) }
+            .onChange(of: cp.active) { _ in UIState.saveMode() }
+            .onChange(of: tr.active) { _ in UIState.saveMode() }
+            .onChange(of: cp.convId) { (v: String) in UIState.d.set(v, forKey: "ui.capiConv") }
+            .onChange(of: tr.roomId) { (v: String) in UIState.d.set(v, forKey: "ui.tripleRoom") }
+            .onChange(of: q.chatId) { (v: String) in UIState.d.set(v, forKey: "ui.chatId") }
+            .onChange(of: showChats) { (v: Bool) in UIState.d.set(v, forKey: "ui.showChats") }
+            .onChange(of: showRooms) { (v: Bool) in UIState.d.set(v, forKey: "ui.showRooms") }
+            .onChange(of: showCapiRooms) { (v: Bool) in UIState.d.set(v, forKey: "ui.showCapiRooms") }
     }
 }
 
