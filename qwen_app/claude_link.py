@@ -55,8 +55,13 @@ def _env():
     return env
 
 
+_STALL = {"until": 0, "why": ""}
+
+
 def status(force=False):
     """Is the local Claude Code usable on the plan? Cached for a minute."""
+    if time.time() < _STALL["until"]:
+        return {"reachable": False, "why": _STALL["why"]}
     if not force and _STATUS["value"] and time.time() - _STATUS["t"] < 60:
         return _STATUS["value"]
     v = {"reachable": False, "why": ""}
@@ -102,8 +107,13 @@ def ask(question, model="sonnet", cwd=None, timeout=600, permission_mode=None, a
     else:
         # a plain question needs no shell: without Bash it cannot try langsay or any other side effect
         cmd += ["--disallowedTools", "Bash"]
-    r = subprocess.run(cmd, cwd=str(cwd or WORKDIR), capture_output=True, text=True, timeout=timeout,
-                       env=_env(), stdin=subprocess.DEVNULL, start_new_session=True)
+    try:
+        r = subprocess.run(cmd, cwd=str(cwd or WORKDIR), capture_output=True, text=True, timeout=timeout,
+                           env=_env(), stdin=subprocess.DEVNULL, start_new_session=True)
+    except subprocess.TimeoutExpired:
+        # logged in but not answering (plan limit, network): treat as unreachable for 5 minutes -> Marko's yes for the API
+        _STALL.update(until=time.time() + 300, why=f"Claude Code did not answer in {timeout} s")
+        raise NeedConsent()
     try:
         d = json.loads(r.stdout)
     except Exception:
