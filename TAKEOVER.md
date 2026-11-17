@@ -88,3 +88,16 @@ the VM copy of the backend; touch/trackpad feel. Cleanup: test room deleted, tes
 | Known flaw: Claude prices | FIXED: Sonnet 522 in / 5 out booked $0.001094 (= $2/$10 per 1M) | app.py MODEL_PRICING |
 
 **Not tested in round 2:** the real unreachable-local-Claude case (a backend with PATH stripped still found `claude`, so the consent path stays offline-tested only); the YES button click in the window (route only); the window driven by AX presses (the window already showed another room, so I tested the same routes by HTTP in my own room and only looked at the window); the live cap loop; restart-and-history in the window; a Queen skill + GitHub read inside the room; Fable on the API. No Swift change, so no new release. Test rooms deleted.
+
+## TRIPLE CHAT — VISIBLE DEMO (17.11.2026, Sonnet headless, Macro Recorder as the only hand, Queen as judge)
+Driver: `tools/triple_demo.py` (front, click, type, shot, ocr; checks the front app is GroqAIStudio before every key). Pictures: `docs/triple-demo/`.
+| Step | What he saw | Queen's verdict | Fix |
+|---|---|---|---|
+| Ask Queen (name for a meditation app) | typed slowly; Queen's 4 names, ASK CLAUDE, Claude picks Still, Queen's final pick | right (she would rather leave the decision to Marko) | none |
+| Claude via Local, own question | Claude answers: signing key first | right | none |
+| Ask Both (tagline) | Queen, then Claude, in order | right | none |
+| "Queen, please ask Claude how to write a skill for renaming files" | Queen asked Claude; Claude showed "..." for 5+ min (local Claude Code logged in but not answering, even a one-word Haiku call) | the one bug left: silence too long | claude_link.ask: timeout means unreachable for 5 min (NeedConsent); room waits 75 s, then "I cannot reach the local Claude Code. Do you want to use API credits?" |
+| YES, USE API CREDITS (real click) | room switched to API, Claude answered in 5 lines | right | none |
+| Scroll up/down, narrow to 560, wide, close and reopen | history kept; at 560 the status line wraps to two lines (nothing cut) | right | none |
+| Local / Api switch | Local by click works; my click on API missed once (ax-press Api works) | right | none |
+Not done: no `macroskill add` entry (the driver is a Python script, not a stored macro); Queen judged per batch of steps, not before each one; the Claude model buttons were hit by one stray click (Sonnet now). Marko's dictation at 14:59 (about the voice engine Mantra UI) landed in the Queen field; cleared there, full text in ~/Library/Logs/voice-to-text-mantra.log.

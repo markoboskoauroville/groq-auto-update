@@ -255,7 +255,7 @@ def register(app, pool, build_queen_system_prompt, record_spend, local_command_a
             raise claude_link.NeedConsent()
         prompt = ("You are Claude, one of three brains in Marko's TRIPLE CHAT." + ROOM_NOTE.format(me="Claude") + CLAUDE_ASK +
                   f"\n\nROOM SO FAR:\n{_transcript(room)}\n\n{tail}\n\nNow answer as Claude.")
-        r = claude_link.ask(prompt, model=model, timeout=150)
+        r = claude_link.ask(prompt, model=model, timeout=75)
         text = (r.get("answer") or "").strip()
         yield ("t", text)
         yield ("end", text)

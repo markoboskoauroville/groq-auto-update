@@ -33,7 +33,7 @@ app = Flask(__name__)
 calls = {"queen": 0, "claude": 0}
 state = {"reachable": True}
 claude_link.status = lambda force=False: {"reachable": state["reachable"]}
-claude_link.ask = lambda prompt, model=None: (calls.__setitem__("claude", calls["claude"] + 1) or
+claude_link.ask = lambda prompt, model=None, **kw: (calls.__setitem__("claude", calls["claude"] + 1) or
                                               {"answer": "Claude says X.\nASK QUEEN: list files"})
 tc.register(app, Pool(), lambda s: "SYS", lambda *a: None, lambda t: None, lambda *a: iter(()), "m", 100)
 
