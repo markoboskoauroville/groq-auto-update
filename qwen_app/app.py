@@ -695,6 +695,12 @@ try:
 except Exception as _vol_exc:
     print(f"[system_volume] not loaded: {_vol_exc}")
 
+try:
+    from system_files import register as _register_files   # 17.11.2026: move one file inside home
+    _register_files(app)
+except Exception as _files_exc:
+    print(f"[system_files] not loaded: {_files_exc}")
+
 
 try:
     from system_settings import register as _register_settings
@@ -1084,6 +1090,9 @@ def _local_command_answer(last_user_text: str):
         if sys.platform == "darwin":
             from system_volume import chat_volume_command   # 14.11.2026: Mac output volume, $0, before anything else
             local_answer = chat_volume_command(last_user_text)
+            if not local_answer:
+                from system_files import chat_move_command   # 17.11.2026: move one file inside home, read back, $0
+                local_answer = chat_move_command(last_user_text)
         if not local_answer and sys.platform == "darwin":
             from gphotos_album import chat_gphotos_command   # 16.11.2026: Google Photos album + share link (Firefox BiDi), $0
             local_answer = chat_gphotos_command(last_user_text)

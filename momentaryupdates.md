@@ -150,3 +150,6 @@ Status: in progress (visible Triple Chat demo by Macro Recorder, Queen as judge;
 
 17.11.2026, Marko (word for word): "can queen be used as capi ui can you teach her or add capi tab to queen software so i can have nicer ui also in queen ask worker to add speaker icon at end of each chat response to play audio from chat text using speechify key beatrice voice"
 Status: in progress (CAPI tab + speaker icon; TAKEOVER.md, CAPI TAB section).
+
+17.11.2026, Marko (word for word): ask Queen to move ~/Library/LaunchAgents/community.auroville.loginstart.plist to ~/Desktop so iTerm stops opening at login.
+Status: hand built (qwen_app/system_files.py, POST /api/system/move, chat "move X to Y", queen_skills/move-file.md); installed, backend restarted; the real move not yet done.
