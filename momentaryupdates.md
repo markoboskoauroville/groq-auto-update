@@ -141,3 +141,6 @@ Status: in progress (TAKEOVER.md, TRIPLE CHAT section).
 
 17.11.2026, Marko (word for word): "don't limit me to 8$, just on it, test everything until it works"
 Status: in progress (replaces the earlier "don't test it"; TAKEOVER.md, TRIPLE CHAT section, TEST phase).
+
+17.11.2026, Marko (word for word): "Please run another builder, which will use only my API, $100 API, and which is going to open now Queen and test triple mode and report bugs. Actually, it should not report bug. It should have to correct bug."
+Status: in progress (API builder opens the real Queen window, tests Triple Chat, fixes bugs; TAKEOVER.md, TRIPLE CHAT — TEST ROUND 2).
