@@ -15,7 +15,7 @@ VERBS = {"where", "chats", "unread", "search", "open", "read", "box", "clear", "
 
 
 def run_tool(verb, args, timeout=150):
-    r = subprocess.run([sys.executable if False else "python3", "-I", TOOL, verb, "--json"] + [str(a) for a in args], capture_output=True, text=True, timeout=timeout)
+    r = subprocess.run(["python3", "-I", TOOL, verb, "--json"] + (["--loose"] if verb in ("open", "read", "find", "media") else []) + [str(a) for a in args], capture_output=True, text=True, timeout=timeout)
     out = r.stdout.strip()
     try:
         return json.loads(out)

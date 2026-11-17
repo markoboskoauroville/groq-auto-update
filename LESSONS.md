@@ -222,3 +222,6 @@ Queen said "Done" after a bare `open x-apple.systempreferences:` that landed on 
   and returns the one Firefox holds (Chrome's cdp_broker may hold 9222), checked on every call; wa_remote.py tries env, 9223, 9222.
 - Rename: Marko, 16.11.2026: "rename the Groq Queen to be Queen". Mac app is now `/Applications/Queen.app`, shown "Queen" (window,
   top row, menu, API text); v6. Repo, folders, bundle id and the `qwen` command unchanged.
+
+## 17.11.2026: WhatsApp contact names
+Skill queen_skills/whatsapp-contact-names.md: the contact is the spelling authority (Vasil -> Vasyl Ros, greeting "Bok Vasyl,"); tool wa_type.py --find; tested by asking her in her chat, answered Vasyl Ros / Vasyl.
