@@ -12,3 +12,9 @@ Switch it (no mouse, the app must be running):
 4. By hand: the [ENGINE] button on the pill, between the language and the text mode; best engine first.
 Soniox and ElevenLabs are paid: only switch to them when Marko names them. Never touch keys.json.
 Test a take without voice: "<app>/Contents/MacOS/Vox to Txt (Mantra)" --hear <engine> <file> en --only
+
+## Since v40-v42 (17.11.2026)
+- By hand: the menu bar item's menu (click it): History on top, English / Croatian / Auto, then the **Engine** submenu (best first; a pick switches the engine of the language ticked above), then Correction and Styling.
+- Engine, Correction, Styling and the text mode are remembered PER LANGUAGE: defaults keys engine_en / engine_hr / engine_auto, style_<lang> (off or haiku/sonnet/opus), styleButtonOn_<lang>, textMode_<lang> (none, correct, style, style_correct). Changing one language never changes the others.
+- By AX: press the status item (System Events, process 'Vox to Txt (Mantra)', menu bar 1, item 1), then menu items by index (separators count).
+- Dictation only inserts at the cursor, never replaces text (v43).
