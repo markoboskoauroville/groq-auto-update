@@ -32,6 +32,8 @@ HISTORY_CHARS = 24000   # the tail of the room that goes into each prompt
 
 _QUEEN_RE = re.compile(r"\b(queen|qwen|quinn|kvin|kvin)\b[,:!]?", re.I)
 _CLAUDE_RE = re.compile(r"\b(claude|cloud|klod|claud)\b[,:!]?", re.I)
+_QUEEN_NAMES = ("queen", "qwen", "quinn", "kvin")
+_LEAD_RE = re.compile(r"^\W*(queen|qwen|quinn|kvin|claude|cloud|klod|claud)\b(?!\s*(?:,\s*(?:and|&|\+)?|and|&|\+)\s*(?:queen|qwen|quinn|kvin|claude|cloud|klod|claud)\b)", re.I)
 _BOTH_RE = re.compile(r"\b(both|everyone|everybody|you two|all of you)\b", re.I)
 
 ROOM_NOTE = (
@@ -80,7 +82,13 @@ def new_room(title: str = "") -> dict:
 def parse_addressing(text: str, last: str = "queen") -> str:
     """queen | claude | both. Names anywhere in the text; none -> whoever was addressed last."""
     q, c = bool(_QUEEN_RE.search(text)), bool(_CLAUDE_RE.search(text))
-    if (q and c) or _BOTH_RE.search(text):
+    if _BOTH_RE.search(text):
+        return "both"
+    if q and c:
+        # "Queen, please ask Claude ..." speaks to Queen only; "Queen and Claude, ..." speaks to both
+        lead = _LEAD_RE.match(text)
+        if lead:
+            return "queen" if lead.group(1).lower() in _QUEEN_NAMES else "claude"
         return "both"
     if q:
         return "queen"
@@ -98,6 +106,33 @@ def _transcript(room: dict) -> str:
 
 def _strip_think(s: str) -> str:
     return re.sub(r"<think>.*?</think>", "", s or "", flags=re.S).strip()
+
+
+class _ThinkFilter:
+    """Hides <think>...</think> from the live stream (the stored text is stripped the same way)."""
+    def __init__(self):
+        self.buf, self.inside = "", False
+
+    def feed(self, tok: str, final: bool = False) -> str:
+        self.buf += tok
+        out = ""
+        while True:
+            if self.inside:
+                i = self.buf.find("</think>")
+                if i < 0:
+                    self.buf = "" if final else self.buf[-8:]
+                    return out
+                self.buf, self.inside = self.buf[i + 8:], False
+            else:
+                i = self.buf.find("<think>")
+                if i >= 0:
+                    out += self.buf[:i]
+                    self.buf, self.inside = self.buf[i + 7:], True
+                    continue
+                keep = 0 if final else next((k for k in range(6, 0, -1) if "<think>".startswith(self.buf[-k:])), 0)
+                out += self.buf[:len(self.buf) - keep]
+                self.buf = self.buf[len(self.buf) - keep:]
+                return out
 
 
 def _line(kind: str, text: str):
@@ -214,11 +249,21 @@ def register(app, pool, build_queen_system_prompt, record_spend, local_command_a
         yield ndj({"speaker": who, "start": 1})
         gen = queen_speak(room, tail) if who == "queen" else claude_speak(room, tail)
         full = ""
+        flt = _ThinkFilter()
+        shown = False
         for kind, val in gen:
             if kind == "t":
-                yield ndj({"t": val})
+                vis = flt.feed(val)
+                if not shown:
+                    vis = vis.lstrip()
+                if vis:
+                    shown = True
+                    yield ndj({"t": vis})
             else:
                 full = val
+        tail_vis = flt.feed("", final=True)
+        if tail_vis:
+            yield ndj({"t": tail_vis})
         full = _strip_think(full)
         if who == "queen":
             # her own answer is her hand: command lines run, results are part of the answer (as in her normal chat)
