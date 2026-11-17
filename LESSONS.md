@@ -225,3 +225,6 @@ Queen said "Done" after a bare `open x-apple.systempreferences:` that landed on 
 
 ## 17.11.2026: WhatsApp contact names
 Skill queen_skills/whatsapp-contact-names.md: the contact is the spelling authority (Vasil -> Vasyl Ros, greeting "Bok Vasyl,"); tool wa_type.py --find; tested by asking her in her chat, answered Vasyl Ros / Vasyl.
+
+## 17.11.2026: TRIPLE CHAT (v9)
+Marko: one room with himself, Queen (Groq) and Claude; everyone hears everyone. Backend qwen_app/triple_chat.py (/api/triple/*, rooms in ~/.groq/triple/), window mac_app/app/Triple.swift (word TRIPLE). Claude via the local Claude Code first; unreachable -> consent question, YES switches the room to API (`resume` turn, no duplicate message). Queen's `ASK CLAUDE:` line is answered in the room (max 3); Claude's `ASK QUEEN:` runs only on the ASK QUEEN button. Built without tests (Marko tests by hand). Trap: Claude models have no rate in get_model_rates, so spend is booked at a fallback rate. Skill queen_skills/triple-chat.md.

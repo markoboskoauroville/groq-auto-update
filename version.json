@@ -1,6 +1,6 @@
 {
-  "version": 8,
-  "updated_at": "2026-11-16T12:00:00+0100",
+  "version": 9,
+  "updated_at": "2026-11-17T12:40:00+0100",
   "log": [
     {
       "version": 1,
@@ -71,6 +71,18 @@
       "message": "v8: pause status time format fix",
       "files": [
         "mac_app/app/core/Pause.swift"
+      ]
+    },
+    {
+      "version": 9,
+      "timestamp": "2026-11-17T12:40:00+0100",
+      "message": "v9: TRIPLE CHAT, one room for Marko, Queen and Claude (local Claude Code first, API on consent); word TRIPLE in the window",
+      "files": [
+        "qwen_app/triple_chat.py",
+        "qwen_app/app.py",
+        "mac_app/app/Triple.swift",
+        "mac_app/app/App.swift",
+        "queen_skills/triple-chat.md"
       ]
     }
   ]
