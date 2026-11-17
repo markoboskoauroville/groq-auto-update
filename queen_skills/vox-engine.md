@@ -33,3 +33,7 @@ Test a take without voice: "<app>/Contents/MacOS/Vox to Txt (Mantra)" --hear <en
 - The name of the open chat (WhatsApp Web: the box says "Type a message to <name>") is spelled as the contact spells it, and given to the engine as a keyword.
 - Typing suggestions: while Marko types in any app, up to three words show under the blob and in the menu bar item; Option+Space puts in the first, a click any. Switch: menu bar menu "Typing suggestions", or Settings, Typing tab; default `typingSuggestions`. Turn on: `defaults write com.mantra.voicetotext typingSuggestions -bool true` then restart the app (or use the menu). Off in password boxes and terminals. Nothing typed is stored.
 - Ask what the strip would show: "<app binary>" --suggest "<letters typed>" <the two words before>. Measure it: "<app binary>" --bench-complete 20.
+
+## Since v54-v55 (17.11.2026)
+- The Croatian dictionary fix is conservative: a valid Croatian word form is never changed (checked against the spelling dictionary in ~/Library/Spelling/hr_HR.*); only clear non-words are fixed.
+- Typing suggestions are re-ranked by a small local model: gemma-3-270m (file in ~/Library/Application Support/Voice to Text (Mantra)/models) run by llama-server (brew llama.cpp) on 127.0.0.1:8869, started by the app while Marko types, stopped after 10 idle minutes. Switch: `defaults write com.mantra.voicetotext localModel -bool false` (off) / true (on). Check it: `curl -s 127.0.0.1:8869/health` and the line "Local model: ..." in Settings, Typing tab. Nothing typed leaves the Mac.
