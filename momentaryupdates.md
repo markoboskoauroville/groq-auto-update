@@ -162,3 +162,6 @@ Status: in progress (CAPI conversations, v12; TAKEOVER.md, CAPI TAB section).
 
 17.11.2026, Marko (word for word): "Add another, quality of life improvement. So I type the prompt. I press send. And when my, my, prompt start to be processed and recognized by API, I want to see con... Confirmation received in the lower right corner next to each prompt. So I know if I need to wait or it's something wrong. So, also, you can add Braille spinner while the API is processing my request so I know it's processing."
 Status: in progress (v13, CAPI prompt status sent / received / Braille spinner / failed).
+
+17.11.2026, Marko (word for word): "Please make Queen recognize the latest version on GitHub when starting. And if there is something new, update is happening automatically."
+Status: in progress (v14, Updater auto mode: no question, swap + relaunch; v15 test release proves it).
