@@ -8,7 +8,7 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 
-let VERSION = 9
+let VERSION = 10
 let APP_NAME = "Queen"
 
 enum Ink {
@@ -184,7 +184,8 @@ struct StatusLine: View {
         parts.append("keys \(q.keys)" + (q.cooling > 0 ? " (\(q.cooling) cooling)" : ""))
         parts.append(String(format: "spent $%.4f", q.spent))
         if !q.backend { parts.append("backend 8766 down") }
-        return parts.joined(separator: "  ·  ")
+        // no-break spaces inside each part: a narrow window wraps between the parts, never inside "keys 1"
+        return parts.map { $0.replacingOccurrences(of: " ", with: "\u{00A0}") }.joined(separator: "  ·  ")
     }
 }
 

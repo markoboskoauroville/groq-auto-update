@@ -1,5 +1,5 @@
 {
-  "version": 9,
+  "version": 10,
   "updated_at": "2026-11-17T12:40:00+0100",
   "log": [
     {
@@ -83,6 +83,16 @@
         "mac_app/app/Triple.swift",
         "mac_app/app/App.swift",
         "queen_skills/triple-chat.md"
+      ]
+    },
+    {
+      "version": 10,
+      "timestamp": "2026-11-17T13:40:00+0100",
+      "message": "v10: Triple Chat tested: live stream hides <think>, 'Queen, ask Claude' addresses Queen only, status line no longer breaks inside 'keys 1'",
+      "files": [
+        "qwen_app/triple_chat.py",
+        "qwen_app/test_triple_chat.py",
+        "mac_app/app/App.swift"
       ]
     }
   ]
