@@ -1,4 +1,5 @@
 // Updater.swift: the app updates itself from its own GitHub releases (Marko, 14.11.2026: "When the application starts,
+// AUTO MODE (Queen, Marko 17.11.2026: "update is happening automatically"): Config.auto = true skips the question; the swap script signs axread and the app, relaunches, and leaves update-result.txt (ok vN / failed vN: reason). A failed version is not retried in a loop.
 // it checks for it, downloads it, and asks you, 'Do you want to update?' Then I say 'yes,' and it downloads and runs the
 // update."). One file, the same in every Mac app: only the three constants in Updater.Config change.
 //
@@ -15,6 +16,7 @@ enum Updater {
         static let repo = "markoboskoauroville/groq_ai_studio"
         static let asset = "app.zip"
         static let sign = "Mantra Apps"
+        static let auto = true     // Queen (Marko, 17.11.2026): updates by itself, no question. false = ask (the kit default)
     }
 
     static var busy = false
@@ -27,12 +29,15 @@ enum Updater {
     /// Called once from applicationDidFinishLaunching. `manual` (from the settings panel) also says "up to date".
     static func checkAtStart(delay: Double = 4, manual: Bool = false) {
         guard !busy else { return }
+        showLastResult()
         busy = true
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay) {
             let found = findAndDownload()
             DispatchQueue.main.async {
                 busy = false
-                if let (v, app, notes) = found { ask(version: v, newApp: app, notes: notes) }
+                if let (v, app, notes) = found {
+                    if Config.auto { install(app, version: v) } else { ask(version: v, newApp: app, notes: notes) }
+                }
                 else if manual { tell("\(APP_NAME) v\(VERSION) is the newest version.") }
             }
         }
@@ -46,6 +51,9 @@ enum Updater {
               let tag = j["tagName"] as? String,
               let v = Int(tag.filter(\.isNumber)) else { log("no release info"); return nil }
         guard v > VERSION else { log("v\(VERSION) is the newest (Latest is \(tag))"); return nil }
+        if Config.auto, let r = try? String(contentsOf: resultFile, encoding: .utf8), r.hasPrefix("failed v\(v):") {
+            log("v\(v) failed to install before (\(r)); not trying again automatically"); return nil
+        }
         let fm = FileManager.default
         let dir = cache.appendingPathComponent(tag)
         let zip = dir.appendingPathComponent(Config.asset)
@@ -74,30 +82,66 @@ enum Updater {
         a.addButton(withTitle: "Later")
         if let icon = NSImage(contentsOf: newApp.appendingPathComponent("Contents/Resources/AppIcon.icns")) { a.icon = icon }
         guard a.runModal() == .alertFirstButtonReturn else { log("v\(v): later"); return }
-        install(newApp)
+        install(newApp, version: v)
+    }
+
+    static var resultFile: URL { cache.deletingLastPathComponent().appendingPathComponent("update-result.txt") }
+
+    /// The swap script leaves one line ("ok vN" / "failed vN: reason"); shown once, quietly, at the next start.
+    static func showLastResult() {
+        guard let r = try? String(contentsOf: resultFile, encoding: .utf8) else { return }
+        let line = r.trimmingCharacters(in: .whitespacesAndNewlines)
+        if line.hasPrefix("ok v"), line == "ok v\(VERSION)" {
+            try? FileManager.default.removeItem(at: resultFile)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { toast("Updated to v\(VERSION)") }
+        } else if line.hasPrefix("failed") {
+            log(line)   // kept on disk so the same version is not retried in a loop
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { toast("Update not installed (\(line.dropFirst(7))). Still v\(VERSION).") }
+        }
+    }
+
+    /// A small non-blocking note at the bottom of the screen, gone after 6 seconds.
+    static func toast(_ s: String) {
+        let label = NSTextField(labelWithString: s)
+        label.textColor = .white; label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.sizeToFit()
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: label.frame.width + 28, height: label.frame.height + 16),
+                         styleMask: [.borderless], backing: .buffered, defer: false)
+        w.isOpaque = false; w.backgroundColor = NSColor.black.withAlphaComponent(0.85); w.level = .floating
+        w.hasShadow = true; w.ignoresMouseEvents = true; w.isReleasedWhenClosed = false
+        label.frame.origin = NSPoint(x: 14, y: 8); w.contentView?.addSubview(label)
+        if let f = (NSApp.keyWindow ?? NSApp.windows.first)?.frame ?? NSScreen.main?.frame {
+            w.setFrameOrigin(NSPoint(x: f.midX - w.frame.width / 2, y: f.minY + 40))
+        }
+        w.orderFrontRegardless()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { w.close() }
     }
 
     /// The swap runs in a detached shell after this app quits; the old copy comes back if anything fails.
-    static func install(_ newApp: URL) {
+    static func install(_ newApp: URL, version v: Int) {
         let target = Bundle.main.bundlePath
-        let script = cache.appendingPathComponent("install.sh")
+        let script = cache.deletingLastPathComponent().appendingPathComponent("install.sh")
         let sh = """
         #!/bin/sh
-        T="$1"; N="$2"; P="$3"; S="$4"
+        T="$1"; N="$2"; P="$3"; S="$4"; V="$5"; R="$6"
+        fail() { echo "failed v$V: $1" > "$R"; open "$T"; exit 1; }
         while kill -0 "$P" 2>/dev/null; do sleep 0.2; done
         xattr -dr com.apple.quarantine "$N" 2>/dev/null
-        codesign --force -s "$S" "$N" || { open "$T"; exit 1; }
-        rm -rf "$T.old"; mv "$T" "$T.old" || { open "$T"; exit 1; }
-        if ditto "$N" "$T"; then rm -rf "$T.old"; else rm -rf "$T"; mv "$T.old" "$T"; fi
+        [ -f "$N/Contents/MacOS/axread" ] && { codesign --force -s "$S" "$N/Contents/MacOS/axread" 2>/dev/null || true; }
+        codesign --force -s "$S" "$N" 2>/dev/null || fail "could not sign with $S"
+        rm -rf "$T.old"; mv "$T" "$T.old" || fail "could not move the old copy"
+        if ditto "$N" "$T"; then rm -rf "$T.old"; else rm -rf "$T"; mv "$T.old" "$T"; fail "copy failed"; fi
+        echo "ok v$V" > "$R"
         open "$T"
         """
-        do { try sh.write(to: script, atomically: true, encoding: .utf8) } catch { tell("Update failed: \(error)"); return }
+        do { try FileManager.default.createDirectory(at: script.deletingLastPathComponent(), withIntermediateDirectories: true)
+             try sh.write(to: script, atomically: true, encoding: .utf8) } catch { toast("Update failed: \(error)"); return }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
-        p.arguments = [script.path, target, newApp.path, String(getpid()), Config.sign]
+        p.arguments = [script.path, target, newApp.path, String(getpid()), Config.sign, String(v), resultFile.path]
         p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
-        do { try p.run() } catch { tell("Update failed: \(error)"); return }
-        log("installing \(newApp.path) over \(target)")
+        do { try p.run() } catch { toast("Update failed: \(error)"); return }
+        log("installing v\(v) from \(newApp.path) over \(target)")
         NSApp.terminate(nil)
     }
 
