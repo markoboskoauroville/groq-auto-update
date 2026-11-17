@@ -159,3 +159,6 @@ Status: in progress (CAPI conversations, v12; TAKEOVER.md, CAPI TAB section).
 
 17.11.2026, Marko (word for word): "Also, add the gear icon at the top of the interface next to the API credits, and this one will just be file picker for API key. And you need to detect API key as we already have everywhere. Even if there is some other text, you extract API key to work with Kepi."
 ("Kepi" = CAPI.) Status: in progress (v13, gear icon in the CAPI tab, key by shape).
+
+17.11.2026, Marko (word for word): "Add another, quality of life improvement. So I type the prompt. I press send. And when my, my, prompt start to be processed and recognized by API, I want to see con... Confirmation received in the lower right corner next to each prompt. So I know if I need to wait or it's something wrong. So, also, you can add Braille spinner while the API is processing my request so I know it's processing."
+Status: in progress (v13, CAPI prompt status sent / received / Braille spinner / failed).
