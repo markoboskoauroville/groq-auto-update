@@ -165,3 +165,12 @@ Status: in progress (v13, CAPI prompt status sent / received / Braille spinner /
 
 17.11.2026, Marko (word for word): "Please make Queen recognize the latest version on GitHub when starting. And if there is something new, update is happening automatically."
 Status: in progress (v14, Updater auto mode: no question, swap + relaunch; v15 test release proves it).
+
+17.11.2026, Marko (word for word): "Also, Queen restarts, it goes to the default screen. It should remember last screen and last configuration of the screen."
+Status: in progress (v16, UI state persisted and restored, also through the auto-update relaunch).
+
+17.11.2026, Marko (word for word): "there is issue with update. The application restart few times already. It's still at v 10, version 10."
+Status: cause = window label showed the Python server's version.json (10), not the app (VERSION); fixed in v16 (label shows app version).
+
+17.11.2026, Marko (word for word): "Like in any of my apps, I don't know why this is missing now. When I click on v v 10, I'm taken to GitHub for new version."
+Status: in progress (v16, version label is a link to the Latest release).
