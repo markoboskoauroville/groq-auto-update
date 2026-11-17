@@ -174,3 +174,6 @@ Status: cause = window label showed the Python server's version.json (10), not t
 
 17.11.2026, Marko (word for word): "Like in any of my apps, I don't know why this is missing now. When I click on v v 10, I'm taken to GitHub for new version."
 Status: in progress (v16, version label is a link to the Latest release).
+
+17.11.2026, Marko (word for word): "Yes. This is very confusing because the number v 10 is all... Already there. Please make that version number so it it it bumps up between versions."
+Status: in progress (v16, one number: VERSION = release tag = version.json, checked in the workflow).
