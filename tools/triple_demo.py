@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Visible Triple Chat demo helpers: Macro Recorder is the only hand. usage: triple_demo.py click X Y | type TEXT | key KEY | shot NAME | front | ocr"""
 import subprocess, sys, time, re
-D = "/Users/markobosko/Developer/groq_ai_studio/docs/triple-demo/"
+D = "/Users/markobosko/Developer/groq_ai_studio/docs/capi-demo/"
 def sh(*a): return subprocess.run(a, capture_output=True, text=True).stdout
 def frontapp(): return sh("osascript", "-e", 'tell application "System Events" to name of first process whose frontmost is true').strip()
 def winid():

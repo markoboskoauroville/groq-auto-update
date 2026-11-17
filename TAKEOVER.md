@@ -107,6 +107,18 @@ Not done: no `macroskill add` entry (the driver is a Python script, not a stored
 Marko's request is in momentaryupdates.md. Plan (tick each, commit+push after each):
 1. [x] One credit number: ledger ~/.cache/claude-api-ledger.jsonl, `capi` writes to it, claude-api-mode status and tools/credit_watch.py agree ($96.66 at 2026-11-17 13:50 minus later spend).
 2. [x] Backend (tested: Haiku turn + follow-up remembered the word, ledger lines, speak render ok) qwen_app/capi_chat.py: /api/capi/* (rooms, model, cwd, run stream, stop, credit).
-3. [ ] Swift: CAPI mode (Capi.swift) beside TRIPLE, Markdown, tool lines, cost, Stop, model + folder pickers, "API ($NN.NN left)".
-4. [ ] Speaker icon on every response (one shared component), Speechify Beatrice, render-to-file, cache; /api/speak/*.
-5. [ ] queen_skills/capi.md; install; release via GitHub Actions; tests; registry/HANDOVER/credit-watch.md.
+3. [x] Swift: CAPI mode (Capi.swift) beside TRIPLE, Markdown, tool lines, cost, Stop, model + folder pickers, "API ($NN.NN left)".
+4. [x] Speaker icon on every response (one shared component), Speechify Beatrice, render-to-file, cache; /api/speak/*.
+5. [x] queen_skills/capi.md; install; release via GitHub Actions; tests; registry/HANDOVER/credit-watch.md.
+
+**RESULTS (17.11.2026, real Queen v11 window, Haiku for CAPI runs, release v11 Latest, mac-app run green first try):**
+| Test | Result |
+|---|---|
+| CAPI tab: question + follow-up in one room (session continues: remembered PELICAN) | PASS |
+| Markdown: heading, table, numbered list, bold, inline code rendered; no raw ** or backticks | PASS (screenshots docs/capi-demo/) |
+| Cost per answer, "API ($93.53 left)" at the top, ledger lines `capi-tab ...` written, credit moved 93.54 -> 93.53 | PASS |
+| One credit number: `claude-api-mode status`, credit_watch and the tab all say $93.5x (tools/api_credit.py in claude-code); `capi` writes its cost to the ledger | PASS |
+| Speaker icon: click renders mp3 (~/.groq/speak, Speechify Beatrice via langsay), plays (amber stop icon), click stops; 2nd click cached (no new file) | PASS |
+| Window at 560 pt: aligned, nothing cut | PASS |
+| Queen taught: skill capi.md, asked in her chat, answered right (POST /api/capi/ask) | PASS |
+**Not tested:** Stop button mid-run; room switching/ROOMS list in the window; folder picker click; models other than Haiku; Croatian audio (route logic only); speaker in normal chat and TRIPLE (same Bubble, not clicked there); Queen actually starting a run through /api/capi/ask herself; Speechify cost (per character, cached = $0; spend ask not run). Mouse/keyboard via Macro Recorder did not register in this run (CAPI click, typing): I used macro ax-press and System Events keystrokes. Note: default folder claude-code makes Claude Code obey its CLAUDE.md and speak aloud via langsay during tests.

@@ -228,3 +228,6 @@ Skill queen_skills/whatsapp-contact-names.md: the contact is the spelling author
 
 ## 17.11.2026: TRIPLE CHAT (v9)
 Marko: one room with himself, Queen (Groq) and Claude; everyone hears everyone. Backend qwen_app/triple_chat.py (/api/triple/*, rooms in ~/.groq/triple/), window mac_app/app/Triple.swift (word TRIPLE). Claude via the local Claude Code first; unreachable -> consent question, YES switches the room to API (`resume` turn, no duplicate message). Queen's `ASK CLAUDE:` line is answered in the room (max 3); Claude's `ASK QUEEN:` runs only on the ASK QUEEN button. Built without tests (Marko tests by hand). Trap: Claude models have no rate in get_model_rates, so spend is booked at a fallback rate. Skill queen_skills/triple-chat.md.
+
+## 17.11.2026: CAPI tab (v11) + speaker
+One chat module: MessageList + Bubble + MarkdownView + SpeakerButton serve normal chat, TRIPLE and CAPI. CAPI = qwen_app/capi_chat.py running `claude -p` stream-json on the 100dolara key, ledger via claude-code/tools/api_credit.py (ONE credit number). Speaker = qwen_app/speak.py (langsay --out, cached) + Speaker.swift. Trap: Macro Recorder mouse clicks did not reach the window; `macro ax-press Queen <label>` and System Events keystroke worked. Skill queen_skills/capi.md.
