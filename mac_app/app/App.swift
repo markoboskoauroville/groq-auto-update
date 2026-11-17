@@ -8,7 +8,7 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 
-let VERSION = 15
+let VERSION = 16
 let APP_NAME = "Queen"
 
 enum Ink {
@@ -156,6 +156,16 @@ struct StatusLine: View {
     var body: some View {
         HStack(spacing: 10) {
             Circle().fill(q.up ? Ink.green : (q.starting ? Ink.amber : Ink.red)).frame(width: 8, height: 8)
+            // the one version number: the app's own (release tag vN); a click opens the Latest release (version-visible.md)
+            Text("v\(VERSION)")
+                .font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundStyle(Ink.accent)
+                .padding(.horizontal, 4).contentShape(Rectangle())
+                .onTapGesture { StatusLine.openLatest() }
+                .accessibilityElement(children: .ignore).accessibilityLabel("version")
+                .accessibilityIdentifier("version").accessibilityValue("v\(VERSION)")
+                .accessibilityAddTraits(.isButton).accessibilityAction(.default) { StatusLine.openLatest() }
+                .pressHover()
+                .help("Version \(VERSION): click to open the newest version on GitHub")
             Text(statusText)
                 .font(.system(size: 12, design: .monospaced)).foregroundStyle(Ink.dim)
                 .fixedSize(horizontal: false, vertical: true)
@@ -180,9 +190,13 @@ struct StatusLine: View {
         .padding(.horizontal, 14).padding(.vertical, 6)
     }
 
+    static func openLatest() {
+        if let u = URL(string: "https://github.com/markoboskoauroville/groq_ai_studio/releases/latest") { NSWorkspace.shared.open(u) }
+    }
+
     var statusText: String {
         guard q.up else { return "Queen \(q.line)" }
-        var parts = ["Queen v\(q.version)"]
+        var parts = ["Queen"]
         if !q.model.isEmpty { parts.append(q.model) }
         parts.append("keys \(q.keys)" + (q.cooling > 0 ? " (\(q.cooling) cooling)" : ""))
         parts.append(String(format: "spent $%.4f", q.spent))
@@ -431,6 +445,44 @@ struct Root: View {
         .background(Ink.bg)
         .ignoresSafeArea(.container, edges: .top)
         .preferredColorScheme(.dark)
+        .onAppear { UIState.restore(showChats: $showChats, showRooms: $showRooms, showCapiRooms: $showCapiRooms) }
+        .onChange(of: cp.active) { _ in UIState.saveMode() }
+        .onChange(of: tr.active) { _ in UIState.saveMode() }
+        .onChange(of: cp.convId) { UIState.d.set($0, forKey: "ui.capiConv") }
+        .onChange(of: tr.roomId) { UIState.d.set($0, forKey: "ui.tripleRoom") }
+        .onChange(of: Queen.shared.chatId) { UIState.d.set($0, forKey: "ui.chatId") }
+        .onChange(of: showChats) { UIState.d.set($0, forKey: "ui.showChats") }
+        .onChange(of: showRooms) { UIState.d.set($0, forKey: "ui.showRooms") }
+        .onChange(of: showCapiRooms) { UIState.d.set($0, forKey: "ui.showCapiRooms") }
+    }
+}
+
+/// The screen as it was left (Marko, 17.11.2026): tab, open conversation / room / chat, side lists. Model and folder are
+/// kept per conversation by the server; the window frame by the frame autosave. A conversation that no longer exists
+/// (CLOSEd) falls back quietly to the first one.
+enum UIState {
+    static let d = UserDefaults.standard
+    static var restoring = true
+    static func saveMode() {
+        if restoring { return }
+        d.set(Capi.shared.active ? "capi" : (Triple.shared.active ? "triple" : "queen"), forKey: "ui.mode")
+    }
+    static func restore(showChats: Binding<Bool>, showRooms: Binding<Bool>, showCapiRooms: Binding<Bool>) {
+        guard restoring else { return }
+        showChats.wrappedValue = d.bool(forKey: "ui.showChats")
+        showRooms.wrappedValue = d.bool(forKey: "ui.showRooms")
+        showCapiRooms.wrappedValue = d.bool(forKey: "ui.showCapiRooms")
+        let mode = d.string(forKey: "ui.mode") ?? "queen"
+        Task { @MainActor in
+            if let c = d.string(forKey: "ui.chatId"), !c.isEmpty {
+                try? await Task.sleep(nanoseconds: 1_200_000_000)           // the server binds first
+                await Queen.shared.open(c)                                  // missing chat: stays on the clean one
+            }
+            if mode == "capi" { Capi.shared.preferred = d.string(forKey: "ui.capiConv") ?? ""; Capi.shared.toggle() }
+            else if mode == "triple" { Triple.shared.preferred = d.string(forKey: "ui.tripleRoom") ?? ""; Triple.shared.toggle() }
+            restoring = false
+            if showChats.wrappedValue { await Queen.shared.loadChats() }
+        }
     }
 }
 

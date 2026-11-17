@@ -17,6 +17,11 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: One version number (VERSION = version.json)
+        run: |
+          V=$(sed -n 's/^let VERSION = \([0-9]*\)/\1/p' "$VERSION_FILE")
+          J=$(python3 -c 'import json;print(json.load(open("version.json"))["version"])')
+          if [ "$V" != "$J" ]; then echo "App.swift VERSION=$V but version.json=$J: one number, bump both"; exit 1; fi
       - name: Tests (Swift Queen server, Phase A)
         run: ./mac_app/test.sh
       - name: Build

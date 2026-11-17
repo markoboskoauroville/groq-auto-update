@@ -37,6 +37,7 @@ final class Capi: ObservableObject {
     @Published var left: Double? = nil
     @Published var busy = false                  // the conversation on screen is answering
     @Published var running = false              // the conversation on screen has its process
+    var preferred = ""                           // the conversation left open last time (restored at start)
     @Published var notice = ""
     @Published var keyNote = ""                  // "API key loaded (…abcd)" after the gear
     private var poller: Task<Void, Never>?
@@ -67,6 +68,8 @@ final class Capi: ObservableObject {
         startPolling()
         if !convId.isEmpty { return }
         await loadConvs()
+        if !preferred.isEmpty, convs.contains(where: { $0.id == preferred }) { let p = preferred; preferred = ""; await open(p); return }
+        preferred = ""
         if let first = convs.first { await open(first.id) } else { await newConversation() }
     }
 

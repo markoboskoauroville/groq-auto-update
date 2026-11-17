@@ -24,6 +24,7 @@ final class Triple: ObservableObject {
     @Published var claudeModel = "claude-sonnet-5-5"
     @Published var busy = false
     @Published var consent: String? = nil        // "I cannot reach the local Claude Code. Do you want to use API credits?"
+    var preferred = ""                           // the room left open last time (restored at start)
     @Published var notice = ""
     private var task: Task<Void, Never>?
     private var pendingTo = "auto"
@@ -47,6 +48,8 @@ final class Triple: ObservableObject {
     @MainActor
     func begin() async {
         await loadRooms()
+        if !preferred.isEmpty, rooms.contains(where: { $0.id == preferred }) { let p = preferred; preferred = ""; await open(p); return }
+        preferred = ""
         if let first = rooms.first { await open(first.id) } else { await newRoom() }
     }
 
