@@ -33,7 +33,7 @@ too) and the Swift window gets a TRIPLE mode.
 6. [x] version.json 9, LESSONS.md, skill groq-ai-studio section, ~/Downloads/API PROJECTS.md line; ./install.sh;
    `mac_app/install.sh v9`; Queen restarted.
 
-**Where we are:** ALL STEPS DONE, mac-app run green, release v9 Latest, ./install.sh done; Marko tests by hand. Earlier: steps 1-4 written (Triple.swift, App.swift VERSION 9, Queen.request/json made internal, triple_chat.py got a `resume` flag for the YES-to-API button); need the mac-app run to be green, then 5 skill, 6 release/install. Earlier: steps 1-3 done (registered lazily in app.py; install.sh already copies *.py, run ./install.sh at the end of step 3 below). Earlier: steps 1-2 done (triple_chat.py written, py_compile ok, `register(app, pool, build_queen_system_prompt, record_spend, local_command_answer, after_turn, default_model, max_tokens)`). Left: 3 register + install.sh, 4 Swift, 5 skill, 6 release. Trap: Claude models have no rate in get_model_rates, so record_spend books them at its fallback rate (cost approximate).
+**Where we are (17.11.2026, TESTED, v10 Latest):** all steps done and tested, see TEST RESULTS below. Older note: ALL STEPS DONE, mac-app run green, release v9 Latest, ./install.sh done; Marko tests by hand. Earlier: steps 1-4 written (Triple.swift, App.swift VERSION 9, Queen.request/json made internal, triple_chat.py got a `resume` flag for the YES-to-API button); need the mac-app run to be green, then 5 skill, 6 release/install. Earlier: steps 1-3 done (registered lazily in app.py; install.sh already copies *.py, run ./install.sh at the end of step 3 below). Earlier: steps 1-2 done (triple_chat.py written, py_compile ok, `register(app, pool, build_queen_system_prompt, record_spend, local_command_answer, after_turn, default_model, max_tokens)`). Left: 3 register + install.sh, 4 Swift, 5 skill, 6 release. Trap: Claude models have no rate in get_model_rates, so record_spend books them at its fallback rate (cost approximate).
 
 **Hand-over (17.11.2026, plan at 1%):** Marko: "And since we are losing the credits soon, only 1%, please give a task to Queen and
 API through our Queen API of Claude to finish updating the app. So they need to do, you just need to save this 1% as much as possible."
@@ -43,3 +43,27 @@ Progress: the ticks above (`git pull`), `git log --oneline -5`, `tail ~/.cache/t
 `[claude-api-mode] cost $` appear only at the end), spend `claude-api-mode status` / ~/.cache/claude-api-ledger.jsonl.
 Resume: run the same command again; the builder starts at the first unticked step.
 
+
+
+## TRIPLE CHAT — TEST RESULTS (17.11.2026, real calls on 127.0.0.1:8765, v10)
+
+| Test | Result |
+|---|---|
+| Marko -> Queen (live Groq) | PASS (bug found: `<think>` text streamed live; fixed, hidden now) |
+| Marko -> Claude (local Claude Code, plan) | PASS |
+| Ask both: Claude's answer mentions Queen's colour (sees her answer) | PASS |
+| "Queen, please ask Claude ..." chain, Claude answers, Queen repeats | PASS (bug: names of both = both answered; fixed: leading name wins, "Queen and Claude" = both) |
+| Addressing Qwen / Quinn / Cloud / no name = last addressed | PASS |
+| Cap of 3 ASK CLAUDE exchanges per turn | PASS offline (test_triple_chat.py, deterministic); live run hit Groq 503 "over capacity" once, Queen's own refusal to loop was also seen |
+| Transcript persisted, read back by GET /get, and shown again by the window after restart | PASS |
+| Claude switch LOCAL -> API (claude-haiku-5-5, real Anthropic call, spend booked) | PASS |
+| Local Claude unreachable -> consent text, YES resume does not duplicate the message | PASS offline (stubbed status) |
+| ASK QUEEN button path | PASS offline |
+| GitHub mac-app run, v10 release Latest | PASS (green, release Latest) |
+| Window at 560 pt, TRIPLE mode screenshot | PASS (bug: "keys 1" broke across lines; fixed in v10, re-captured, aligned, nothing cut) |
+| install.sh gate (all tests incl. new test_triple_chat.py), Queen restarted | PASS |
+
+**Could not be tested:** the real unreachable-local-Claude case (only stubbed; I did not log Claude Code out); the live cap with a
+model that really loops (Groq 503 and Queen declines to loop); YES-to-API button click in the window (route tested, not the click);
+Fable/Opus models on the API (only Haiku called, to keep it cheap); Queen executing real command lines inside the room;
+the VM copy of the backend; touch/trackpad feel. Cleanup: test room deleted, testclean run, window left at 560 pt.
