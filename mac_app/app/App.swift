@@ -8,7 +8,7 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 
-let VERSION = 8
+let VERSION = 9
 let APP_NAME = "Queen"
 
 enum Ink {
@@ -22,6 +22,7 @@ enum Ink {
     static let amber = Color(red: 1.0, green: 0.70, blue: 0.15)
     static let red = Color(red: 1.0, green: 0.35, blue: 0.30)
     static let accent = Color(red: 0.96, green: 0.45, blue: 0.20)   // Groq orange
+    static let claude = Color(red: 0.55, green: 0.65, blue: 1.0)    // Claude's voice in the triple chat
 }
 
 // every word that acts is an Accessibility button with a label and an identifier (swift-apps.md, 31.10.2026)
@@ -149,6 +150,7 @@ struct TopRow: View {
 // ---------------------------------------------------------------- the status line
 struct StatusLine: View {
     @ObservedObject var q = Queen.shared
+    @ObservedObject var tr = Triple.shared
     @Binding var showChats: Bool
     var body: some View {
         HStack(spacing: 10) {
@@ -163,6 +165,8 @@ struct StatusLine: View {
                     q.startServer()
                 }
             }
+            Word(text: "TRIPLE", id: "triple", color: tr.active ? Ink.claude : Ink.text,
+                 help: "Triple chat: you, Queen and Claude in one room, everyone hears everyone") { tr.toggle() }
             Word(text: "CHATS", id: "chats", color: showChats ? Ink.accent : Ink.text, help: "Your saved chats with Queen") {
                 showChats.toggle()
                 if showChats { Task { await q.loadChats() } }
@@ -217,9 +221,9 @@ struct Bubble: View {
     let m: Msg
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(m.role == "user" ? "YOU" : "QUEEN")
+            Text(Bubble.label(m.role))
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundStyle(m.role == "user" ? Ink.dim : Ink.accent)
+                .foregroundStyle(Bubble.color(m.role))
             Text(Bubble.rich(m.content.isEmpty ? "…" : m.content))
                 .font(.system(size: 14))
                 .foregroundStyle(Ink.text)
@@ -228,8 +232,13 @@ struct Bubble: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
-        .background(m.role == "user" ? Ink.panel : Color.clear)
+        .background(Bubble.isMine(m.role) ? Ink.panel : Color.clear)
     }
+
+    // the roles of the one-to-one chat (user / assistant) and the speakers of the triple chat (marko / queen / claude)
+    static func isMine(_ r: String) -> Bool { r == "user" || r == "marko" }
+    static func label(_ r: String) -> String { isMine(r) ? "YOU" : (r == "claude" ? "CLAUDE" : "QUEEN") }
+    static func color(_ r: String) -> Color { isMine(r) ? Ink.dim : (r == "claude" ? Ink.claude : Ink.accent) }
 
     static func rich(_ s: String) -> AttributedString {
         let opts = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
@@ -301,6 +310,8 @@ struct InputRow: View {
 
 struct Root: View {
     @State private var showChats = false
+    @State private var showRooms = false
+    @ObservedObject var tr = Triple.shared
     var body: some View {
         VStack(spacing: 0) {
             TopRow()
@@ -308,14 +319,28 @@ struct Root: View {
             StatusLine(showChats: $showChats)
             Hairline()
             HStack(spacing: 0) {
-                if showChats {
-                    ChatList().frame(width: 240)
-                    Rectangle().fill(Ink.line).frame(width: 1)
+                if tr.active {
+                    if showRooms {
+                        RoomList().frame(width: 240)
+                        Rectangle().fill(Ink.line).frame(width: 1)
+                    }
+                    TripleConversation()
+                } else {
+                    if showChats {
+                        ChatList().frame(width: 240)
+                        Rectangle().fill(Ink.line).frame(width: 1)
+                    }
+                    Conversation()
                 }
-                Conversation()
             }
             Hairline()
-            InputRow()
+            if tr.active {
+                TripleControls(showRooms: $showRooms)
+                Hairline()
+                TripleInput()
+            } else {
+                InputRow()
+            }
         }
         .background(Ink.bg)
         .ignoresSafeArea(.container, edges: .top)

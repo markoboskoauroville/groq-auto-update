@@ -50,7 +50,7 @@ final class Queen: ObservableObject {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func request(_ path: String, body: [String: Any]? = nil, timeout: Double = 15) -> URLRequest? {
+    func request(_ path: String, body: [String: Any]? = nil, timeout: Double = 15) -> URLRequest? {
         guard let url = URL(string: base + path) else { return nil }
         var r = URLRequest(url: url, timeoutInterval: timeout)
         if !token.isEmpty { r.setValue(token, forHTTPHeaderField: "X-Queen-Token") }
@@ -62,7 +62,7 @@ final class Queen: ObservableObject {
         return r
     }
 
-    private func json(_ path: String, body: [String: Any]? = nil, timeout: Double = 15) async -> [String: Any]? {
+    func json(_ path: String, body: [String: Any]? = nil, timeout: Double = 15) async -> [String: Any]? {
         guard let r = request(path, body: body, timeout: timeout) else { return nil }
         do {
             let (d, _) = try await URLSession.shared.data(for: r)

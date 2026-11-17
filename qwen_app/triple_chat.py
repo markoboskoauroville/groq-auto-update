@@ -8,7 +8,7 @@ Routes (all under /api/triple/, the Swift app proxies unknown routes here):
     GET  /api/triple/get?id=
     POST /api/triple/new       {title?}
     POST /api/triple/settings  {id, claude_via: local|api, claude_model}
-    POST /api/triple/turn      {id, text, to: queen|claude|both|auto, allow_api?}  -> NDJSON
+    POST /api/triple/turn      {id, text, to: queen|claude|both|auto, allow_api?, resume?}  -> NDJSON
          {"speaker":"queen","start":1} {"t":"..."} {"need_consent":"..."} {"error":"..."} {"done":1}
 Rules: Claude local first (plan, $0); local unreachable -> need_consent and wait; API key never printed.
 Queen may write a line `ASK CLAUDE: <question>`: Claude answers in the room and Queen continues (max 3 per turn).
@@ -240,7 +240,7 @@ def register(app, pool, build_queen_system_prompt, record_spend, local_command_a
                 return m["text"]
         return ""
 
-    def run_turn(room, text, to, allow_api):
+    def run_turn(room, text, to, allow_api, resume=False):
         if allow_api and room.get("claude_via") != "api":
             room["claude_via"] = "api"
         text = (text or "").strip()
@@ -265,6 +265,10 @@ def register(app, pool, build_queen_system_prompt, record_spend, local_command_a
                         yield ndj({"done": 1})
                         return
                     to = "claude"
+        elif resume:
+            # Marko said YES to API credits: Claude answers the message that is already in the room (no duplicate)
+            to = "claude"
+            tail = "Answer the latest message above that is addressed to you (or the question Queen asked you)."
         else:
             # empty text + to=queen: the ASK QUEEN button, she answers Claude's last ASK QUEEN line
             q = ""
@@ -353,5 +357,6 @@ def register(app, pool, build_queen_system_prompt, record_spend, local_command_a
         room = _load(d.get("id", ""))
         if not room:
             return jsonify(ok=False, error="no such room"), 404
-        return Response(run_turn(room, d.get("text", ""), d.get("to", "auto"), bool(d.get("allow_api"))),
+        return Response(run_turn(room, d.get("text", ""), d.get("to", "auto"), bool(d.get("allow_api")),
+                                 bool(d.get("resume"))),
                         mimetype="application/x-ndjson", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
