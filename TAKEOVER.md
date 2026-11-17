@@ -73,3 +73,18 @@ the VM copy of the backend; touch/trackpad feel. Cleanup: test room deleted, tes
 
 **Cause:** the Swift window sends every message to `POST /api/triple/turn` with the room id it holds. The server returned 404 "no such room" because that room file in `~/.groq/triple/` was gone (`~/.groq/triple` was empty: the test room was deleted during test cleanup while Marko's window still held its id). Un-addressed messages were not the problem (they default to the last addressed speaker, Queen).
 **Fix:** `triple_chat.recover_room(id)`; `/api/triple/turn` and `/api/triple/settings` now recreate a missing room empty under the same id instead of 404 (only an empty id still 404s), so the window carries on and its reload finds the room. Proof: turn on a never-created id returns 200, Queen/Claude stream answers, room then listed. `/api/triple/get` still 404s for unknown ids (read only). Not changed: Swift v10 (a Swift fallback to NEW ROOM on 404 would be nice, left for a later version).
+
+
+## TRIPLE CHAT — TEST ROUND 2 (17.11.2026, API builder, real Queen v10)
+
+| Test | Result | Fix commit |
+|---|---|---|
+| Real window (screencapture -l): TRIPLE mode, one grid, nothing cut, speakers coloured, ASK QUEEN / CLAUDE / BOTH visible | PASS | none needed |
+| Marko -> Queen | PASS after retry (Groq 503 "over capacity" gave an ERR line) | triple_chat: Queen retries 503/429 up to 3x with backoff |
+| Marko -> Claude local | PASS | |
+| "Quinn, ask Cloud ..." chain (name addressing + ASK CLAUDE) | PASS | |
+| Ask both (Queen blue, Claude green) | PASS | |
+| Claude via API Sonnet 5.5 and Opus 5.5 (real calls) | PASS | |
+| Known flaw: Claude prices | FIXED: Sonnet 522 in / 5 out booked $0.001094 (= $2/$10 per 1M) | app.py MODEL_PRICING |
+
+**Not tested in round 2:** the real unreachable-local-Claude case (a backend with PATH stripped still found `claude`, so the consent path stays offline-tested only); the YES button click in the window (route only); the window driven by AX presses (the window already showed another room, so I tested the same routes by HTTP in my own room and only looked at the window); the live cap loop; restart-and-history in the window; a Queen skill + GitHub read inside the room; Fable on the API. No Swift change, so no new release. Test rooms deleted.

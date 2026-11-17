@@ -171,34 +171,39 @@ def register(app, pool, build_queen_system_prompt, record_spend, local_command_a
         if not cands:
             raise RuntimeError("All Groq keys are cooling down. Wait or import another key.")
         last_exc = None
-        for key in cands:
-            got = []
-            pt = ct = 0
-            try:
-                client = Groq(api_key=key, max_retries=0)
-                resp = client.chat.completions.create(model=model, messages=msgs, stream=True, max_tokens=max_tokens)
-                for chunk in resp:
-                    if chunk.choices:
-                        d = chunk.choices[0].delta
-                        if getattr(d, "content", None):
-                            got.append(d.content)
-                            yield ("t", d.content)
-                    u = getattr(chunk, "usage", None) or getattr(getattr(chunk, "x_groq", None), "usage", None)
-                    if u:
-                        pt = int(getattr(u, "prompt_tokens", 0) or pt)
-                        ct = int(getattr(u, "completion_tokens", 0) or ct)
-                pool.good(key, model)
-                full = "".join(got)
-                if not (pt or ct):
-                    pt, ct = len(user + system) // 4, max(1, len(full) // 4)
-                record_spend(model, pt, ct, f"triple_queen_{_now()}")
-                yield ("end", full)
-                return
-            except Exception as exc:
-                last_exc = exc
-                pool.cool(key, model, exc)
-                if got:
-                    raise RuntimeError(f"Queen's stream broke: {exc}")
+        for _attempt in range(3):
+          for key in cands:
+              got = []
+              pt = ct = 0
+              try:
+                  client = Groq(api_key=key, max_retries=0)
+                  resp = client.chat.completions.create(model=model, messages=msgs, stream=True, max_tokens=max_tokens)
+                  for chunk in resp:
+                      if chunk.choices:
+                          d = chunk.choices[0].delta
+                          if getattr(d, "content", None):
+                              got.append(d.content)
+                              yield ("t", d.content)
+                      u = getattr(chunk, "usage", None) or getattr(getattr(chunk, "x_groq", None), "usage", None)
+                      if u:
+                          pt = int(getattr(u, "prompt_tokens", 0) or pt)
+                          ct = int(getattr(u, "completion_tokens", 0) or ct)
+                  pool.good(key, model)
+                  full = "".join(got)
+                  if not (pt or ct):
+                      pt, ct = len(user + system) // 4, max(1, len(full) // 4)
+                  record_spend(model, pt, ct, f"triple_queen_{_now()}")
+                  yield ("end", full)
+                  return
+              except Exception as exc:
+                  last_exc = exc
+                  pool.cool(key, model, exc)
+                  if got:
+                      raise RuntimeError(f"Queen's stream broke: {exc}")
+          if last_exc is not None and _attempt < 2 and any(w in str(last_exc).lower() for w in ('503', 'over capacity', '429')):
+              time.sleep(2 * (_attempt + 1))
+              continue
+          break
         raise RuntimeError(f"Queen could not be reached: {last_exc}")
 
     def claude_api(room, tail, model):
