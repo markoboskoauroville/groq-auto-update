@@ -252,6 +252,11 @@ struct Bubble: View {
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 10)
+            .padding(.bottom, Bubble.isMine(m.role) && !m.status.isEmpty ? 12 : 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .bottomTrailing) {
+                if Bubble.isMine(m.role) && !m.status.isEmpty { PromptStatus(m: m).padding(.trailing, 12).padding(.bottom, 4) }
+            }
             .background(Bubble.isMine(m.role) ? Ink.panel : Color.clear)
         }
     }
@@ -264,6 +269,37 @@ struct Bubble: View {
     static func rich(_ s: String) -> AttributedString {
         let opts = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         return (try? AttributedString(markdown: s, options: opts)) ?? AttributedString(s)
+    }
+}
+
+/// CAPI (v13): the lower right corner of each prompt. Marko: "Confirmation received in the lower right corner next to
+/// each prompt ... add Braille spinner while the API is processing". sent -> received ✓ + spinner -> received ✓ | failed.
+struct PromptStatus: View {
+    let m: Msg
+    static let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    var body: some View {
+        Group {
+            switch m.status {
+            case "sent":
+                Text("sent").foregroundStyle(Ink.dim)
+            case "received":
+                HStack(spacing: 6) {
+                    TimelineView(.periodic(from: .now, by: 0.08)) { t in
+                        Text(PromptStatus.frames[Int(t.date.timeIntervalSinceReferenceDate / 0.08) % PromptStatus.frames.count])
+                            .foregroundStyle(Ink.claude)
+                    }
+                    Text("received ✓").foregroundStyle(Ink.green)
+                }
+            case "failed":
+                Text("failed").foregroundStyle(Ink.red).help(m.reason.isEmpty ? "failed" : m.reason)
+            default:
+                Text("received ✓").foregroundStyle(Ink.dim)
+            }
+        }
+        .font(.system(size: 11, weight: .bold, design: .monospaced))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Prompt " + (m.status == "done" ? "received, answered" : m.status) + (m.reason.isEmpty ? "" : ": " + m.reason))
+        .accessibilityIdentifier("capi-prompt-status")
     }
 }
 

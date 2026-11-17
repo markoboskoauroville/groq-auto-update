@@ -160,11 +160,20 @@ def _session_file(session):
     return Path(hits[0]) if hits else None
 
 
+def _stale(room):
+    """No process: a prompt left 'sent' or 'received' (Queen restarted mid-answer) is a failed one."""
+    for m in (room or {}).get("messages", []):
+        if m.get("role") == "marko" and m.get("status") in ("sent", "received"):
+            m["status"] = "failed"
+            m["reason"] = "the process ended before the answer (Queen restarted?)"
+    return room
+
+
 class Conv:
     """One conversation's background claude process and its reader thread."""
 
     def __init__(self, room):
-        self.room = room
+        self.room = _stale(room)
         self.lock = threading.RLock()
         self.proc = None
         self.busy = False
@@ -175,6 +184,7 @@ class Conv:
         self.done = threading.Condition(self.lock)
         self.turns = 0
         self.stopping = False     # STOP pressed: the end of the process is not an error
+        self.pending = None       # the marko message being answered: status sent -> received -> done | failed
 
     def save(self):
         with self.lock:
@@ -229,7 +239,10 @@ class Conv:
             if not self.start():
                 return False
             r = self.room
-            r["messages"].append({"role": "marko", "text": text})
+            if self.pending is not None:      # a turn still open (should not happen: the window waits) is closed first
+                self._mark("done")
+            r["messages"].append({"role": "marko", "text": text, "status": "sent"})
+            self.pending = r["messages"][-1]
             if r.get("title") in ("CAPI chat", "", None):
                 r["title"] = text.strip().splitlines()[0][:48] or "CAPI chat"
             payload = text
@@ -249,8 +262,23 @@ class Conv:
             except Exception as exc:
                 self.busy = False
                 self.error = f"the process did not take the message: {exc}"
+                self._mark("failed", self.error)
+                self.save()
                 return False
             return True
+
+    def _mark(self, status, reason=""):
+        """Status of the prompt being answered (v13): received once claude shows it took it, done / failed at the end."""
+        m = self.pending
+        if m is None:
+            return
+        if status == "received" and m.get("status") != "sent":
+            return
+        m["status"] = status
+        if reason:
+            m["reason"] = reason[:300]
+        if status in ("done", "failed"):
+            self.pending = None
 
     def stop(self):
         with self.lock:
@@ -279,6 +307,10 @@ class Conv:
                     continue
                 t = d.get("type")
                 with self.lock:
+                    if t in ("assistant", "user", "result") or (t == "system" and d.get("subtype") == "init"):
+                        if self.pending is not None and self.pending.get("status") == "sent":
+                            self._mark("received")
+                            self.save()
                     if t == "assistant":
                         for b in (d.get("message") or {}).get("content") or []:
                             if b.get("type") == "text" and (b.get("text") or "").strip():
@@ -304,6 +336,9 @@ class Conv:
                                     break
                         if d.get("is_error"):
                             self.error = str(d.get("result"))[:300]
+                            self._mark("failed", self.error)
+                        else:
+                            self._mark("done")
                         self.room["started"] = True
                         self.busy = False
                         self.turns += 1
@@ -326,6 +361,8 @@ class Conv:
                             self.error = (lines[-1] if lines else f"claude ended ({p.returncode})")[:300]
                     except Exception:
                         pass
+                if self.pending is not None:
+                    self._mark("failed", "stopped by STOP" if self.stopping else (self.error or "the process ended"))
                 self.save()
                 self.done.notify_all()
 
@@ -355,7 +392,7 @@ def _room(rid):
     if c:
         with c.lock:
             return json.loads(json.dumps(c.room)), c.state()
-    r = _load(rid)
+    r = _stale(_load(rid))
     return r, {"running": False, "busy": False, "error": ""}
 
 

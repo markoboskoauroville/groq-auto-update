@@ -112,6 +112,7 @@ final class Capi: ObservableObject {
         let id = (room["id"] as? String) ?? convId
         let sig = id + "|\(ms.count)|" + (((ms.last?["text"] as? String) ?? "").count.description)
             + "|" + (((ms.last?["cost"] as? Double) ?? 0).description)
+            + "|" + ms.compactMap { $0["status"] as? String }.joined(separator: ",")
         convId = id
         title = (room["title"] as? String) ?? "CAPI chat"
         model = (room["model"] as? String) ?? model
@@ -125,7 +126,8 @@ final class Capi: ObservableObject {
             shownSig = sig
             messages = ms.compactMap { m in
                 guard let r = m["role"] as? String else { return nil }
-                return Msg(role: r, content: (m["text"] as? String) ?? "", cost: (m["cost"] as? Double) ?? 0)
+                return Msg(role: r, content: (m["text"] as? String) ?? "", cost: (m["cost"] as? Double) ?? 0,
+                           status: (m["status"] as? String) ?? "", reason: (m["reason"] as? String) ?? "")
             }
         }
     }
@@ -174,7 +176,7 @@ final class Capi: ObservableObject {
     func send(_ text: String) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !busy, !convId.isEmpty, !t.isEmpty else { return }
-        messages.append(Msg(role: "marko", content: t))
+        messages.append(Msg(role: "marko", content: t, status: "sent"))
         busy = true
         notice = ""
         let id = convId
