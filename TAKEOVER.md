@@ -105,7 +105,7 @@ Not done: no `macroskill add` entry (the driver is a Python script, not a stored
 
 ## CAPI TAB + SPEAKER ICON (17.11.2026, Sonnet headless)
 Marko's request is in momentaryupdates.md. Plan (tick each, commit+push after each):
-1. [ ] One credit number: ledger ~/.cache/claude-api-ledger.jsonl, `capi` writes to it, claude-api-mode status and tools/credit_watch.py agree ($96.66 at 2026-11-17 13:50 minus later spend).
+1. [x] One credit number: ledger ~/.cache/claude-api-ledger.jsonl, `capi` writes to it, claude-api-mode status and tools/credit_watch.py agree ($96.66 at 2026-11-17 13:50 minus later spend).
 2. [ ] Backend qwen_app/capi_chat.py: /api/capi/* (rooms, model, cwd, run stream, stop, credit).
 3. [ ] Swift: CAPI mode (Capi.swift) beside TRIPLE, Markdown, tool lines, cost, Stop, model + folder pickers, "API ($NN.NN left)".
 4. [ ] Speaker icon on every response (one shared component), Speechify Beatrice, render-to-file, cache; /api/speak/*.

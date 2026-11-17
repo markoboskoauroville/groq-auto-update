@@ -646,6 +646,18 @@ try:
 except Exception as _triple_exc:
     print(f"[triple_chat] not loaded: {_triple_exc}")
 
+# 17.11.2026: CAPI tab (capi_chat.py) and the speaker icon (speak.py)
+try:
+    from capi_chat import register as _register_capi
+    _register_capi(app)
+except Exception as _capi_exc:
+    print(f"[capi_chat] not loaded: {_capi_exc}")
+try:
+    from speak import register as _register_speak
+    _register_speak(app)
+except Exception as _speak_exc:
+    print(f"[speak] not loaded: {_speak_exc}")
+
 # 14.11.2026: Accessibility reading (ax_read: the Swift axread, else Python) and WhatsApp through it (no screenshot)
 try:
     from ax_read import register as _register_ax
