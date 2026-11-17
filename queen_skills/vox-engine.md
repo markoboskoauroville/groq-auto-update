@@ -18,3 +18,4 @@ Test a take without voice: "<app>/Contents/MacOS/Vox to Txt (Mantra)" --hear <en
 - Engine, Correction, Styling and the text mode are remembered PER LANGUAGE: defaults keys engine_en / engine_hr / engine_auto, style_<lang> (off or haiku/sonnet/opus), styleButtonOn_<lang>, textMode_<lang> (none, correct, style, style_correct). Changing one language never changes the others.
 - By AX: press the status item (System Events, process 'Vox to Txt (Mantra)', menu bar 1, item 1), then menu items by index (separators count).
 - Dictation only inserts at the cursor, never replaces text (v43).
+- v45: when a take did not land (the strip says so), one click on the menu bar item copies its text; the next click opens the menu. Takes are joined with a space (v44).
