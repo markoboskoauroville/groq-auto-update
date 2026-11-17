@@ -19,3 +19,9 @@ Test a take without voice: "<app>/Contents/MacOS/Vox to Txt (Mantra)" --hear <en
 - By AX: press the status item (System Events, process 'Vox to Txt (Mantra)', menu bar 1, item 1), then menu items by index (separators count).
 - Dictation only inserts at the cursor, never replaces text (v43).
 - v45: when a take did not land (the strip says so), one click on the menu bar item copies its text; the next click opens the menu. Takes are joined with a space (v44).
+
+## History and the keys (v46-v47, 17.11.2026)
+- F1 records an English take, F2 a Croatian take (always; AUTO is only a menu choice). Both keys are set in Settings, Typing tab.
+- Every take is in History (menu bar item, History), also the failed ones, with where it landed (typed, pasted, did not land).
+- To redo a take: select it in History, choose ENGINE and LANGUAGE, tick Correction and/or Styling (each with its own Claude model), press "Re-transcribe". A new version appears under the take. There are no thumbs any more.
+- Test hook to open History: `osascript -l JavaScript -e "ObjC.import('Foundation'); $.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately('com.mantra.voicetotext.history', $(), $(), true)"`.
