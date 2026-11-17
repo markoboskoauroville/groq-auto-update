@@ -8,7 +8,7 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 
-let VERSION = 10
+let VERSION = 11
 let APP_NAME = "Queen"
 
 enum Ink {
@@ -151,6 +151,7 @@ struct TopRow: View {
 struct StatusLine: View {
     @ObservedObject var q = Queen.shared
     @ObservedObject var tr = Triple.shared
+    @ObservedObject var cp = Capi.shared
     @Binding var showChats: Bool
     var body: some View {
         HStack(spacing: 10) {
@@ -166,7 +167,9 @@ struct StatusLine: View {
                 }
             }
             Word(text: "TRIPLE", id: "triple", color: tr.active ? Ink.claude : Ink.text,
-                 help: "Triple chat: you, Queen and Claude in one room, everyone hears everyone") { tr.toggle() }
+                 help: "Triple chat: you, Queen and Claude in one room, everyone hears everyone") { cp.active = false; tr.toggle() }
+            Word(text: "CAPI", id: "capi", color: cp.active ? Ink.claude : Ink.text,
+                 help: "CAPI: chat with Claude Code on your API credit") { cp.toggle() }
             Word(text: "CHATS", id: "chats", color: showChats ? Ink.accent : Ink.text, help: "Your saved chats with Queen") {
                 showChats.toggle()
                 if showChats { Task { await q.loadChats() } }
@@ -221,19 +224,36 @@ struct ChatList: View {
 struct Bubble: View {
     let m: Msg
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(Bubble.label(m.role))
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundStyle(Bubble.color(m.role))
-            Text(Bubble.rich(m.content.isEmpty ? "…" : m.content))
-                .font(.system(size: 14))
-                .foregroundStyle(Ink.text)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+        if m.role == "tool" {
+            // CAPI: one compact line per tool Claude Code used
+            Text("·  " + m.content)
+                .font(.system(size: 11, design: .monospaced)).foregroundStyle(Ink.dim)
+                .lineLimit(2).truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16).padding(.vertical, 2)
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(Bubble.label(m.role))
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Bubble.color(m.role))
+                if m.content.isEmpty {
+                    Text("…").font(.system(size: 14)).foregroundStyle(Ink.text)
+                } else {
+                    MarkdownView(text: m.content).textSelection(.enabled)
+                }
+                if !Bubble.isMine(m.role) && !m.content.isEmpty {
+                    HStack(spacing: 6) {                      // the end of every response: the speaker icon (one component)
+                        SpeakerButton(m: m)
+                        if m.cost > 0 {
+                            Text(String(format: "$%.4f", m.cost)).font(.system(size: 11, design: .monospaced)).foregroundStyle(Ink.dim)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .background(Bubble.isMine(m.role) ? Ink.panel : Color.clear)
         }
-        .padding(.horizontal, 16).padding(.vertical, 10)
-        .background(Bubble.isMine(m.role) ? Ink.panel : Color.clear)
     }
 
     // the roles of the one-to-one chat (user / assistant) and the speakers of the triple chat (marko / queen / claude)
@@ -247,29 +267,47 @@ struct Bubble: View {
     }
 }
 
-struct Conversation: View {
-    @ObservedObject var q = Queen.shared
+/// The one scrolling message list: the normal chat, TRIPLE and CAPI all use it (one module).
+struct MessageList<Extra: View>: View {
+    let messages: [Msg]
+    let empty: String
+    var notice: String = ""
+    var trigger: Int = 0
+    @ViewBuilder var extra: () -> Extra
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    if q.messages.isEmpty {
-                        Text("Ask Queen anything. She also reads apps through Accessibility: try \"check my last 5 WhatsApp messages\".")
+                    if messages.isEmpty {
+                        Text(empty)
                             .font(.system(size: 14)).foregroundStyle(Ink.dim)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(16)
                     }
-                    ForEach(q.messages) { m in
+                    ForEach(messages) { m in
                         Bubble(m: m)
-                        Hairline()
+                        if m.role != "tool" { Hairline() }
+                    }
+                    extra()
+                    if !notice.isEmpty {
+                        Text(notice).font(.system(size: 12, design: .monospaced)).foregroundStyle(Ink.red)
+                            .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                            .padding(.horizontal, 16).padding(.vertical, 8)
                     }
                     Color.clear.frame(height: 1).id("end")
                 }
             }
-            .onChange(of: q.messages) { _ in
-                proxy.scrollTo("end", anchor: .bottom)
-            }
+            .onChange(of: messages) { _ in proxy.scrollTo("end", anchor: .bottom) }
+            .onChange(of: trigger) { _ in proxy.scrollTo("end", anchor: .bottom) }
         }
+    }
+}
+
+struct Conversation: View {
+    @ObservedObject var q = Queen.shared
+    var body: some View {
+        MessageList(messages: q.messages,
+                    empty: "Ask Queen anything. She also reads apps through Accessibility: try \"check my last 5 WhatsApp messages\".") { EmptyView() }
     }
 }
 
@@ -312,15 +350,24 @@ struct InputRow: View {
 struct Root: View {
     @State private var showChats = false
     @State private var showRooms = false
+    @State private var showCapiRooms = false
     @ObservedObject var tr = Triple.shared
+    @ObservedObject var cp = Capi.shared
     var body: some View {
         VStack(spacing: 0) {
             TopRow()
             Hairline()
             StatusLine(showChats: $showChats)
             Hairline()
+            if cp.active { CapiHeader(showRooms: $showCapiRooms); Hairline() }
             HStack(spacing: 0) {
-                if tr.active {
+                if cp.active {
+                    if showCapiRooms {
+                        CapiRoomList().frame(width: 240)
+                        Rectangle().fill(Ink.line).frame(width: 1)
+                    }
+                    CapiConversation()
+                } else if tr.active {
                     if showRooms {
                         RoomList().frame(width: 240)
                         Rectangle().fill(Ink.line).frame(width: 1)
@@ -335,7 +382,9 @@ struct Root: View {
                 }
             }
             Hairline()
-            if tr.active {
+            if cp.active {
+                CapiInput()
+            } else if tr.active {
                 TripleControls(showRooms: $showRooms)
                 Hairline()
                 TripleInput()

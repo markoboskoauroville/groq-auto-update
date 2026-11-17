@@ -40,6 +40,7 @@ final class Triple: ObservableObject {
     @MainActor
     func toggle() {
         active.toggle()
+        if active { Capi.shared.active = false }
         if active && roomId.isEmpty { Task { await begin() } }
     }
 
@@ -247,20 +248,10 @@ struct RoomList: View {
 struct TripleConversation: View {
     @ObservedObject var t = Triple.shared
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    if t.messages.isEmpty {
-                        Text("Three brains in one room: you, Queen and Claude. Say \"Queen, what do you think?\" or \"Claude, how do we do this?\"; everyone hears everything. Queen can ask Claude, and Claude can suggest what Queen should do.")
-                            .font(.system(size: 14)).foregroundStyle(Ink.dim)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(16)
-                    }
-                    ForEach(t.messages) { m in
-                        Bubble(m: m)
-                        Hairline()
-                    }
-                    if let c = t.consent {
+        MessageList(messages: t.messages,
+                    empty: "Three brains in one room: you, Queen and Claude. Say \"Queen, what do you think?\" or \"Claude, how do we do this?\"; everyone hears everything. Queen can ask Claude, and Claude can suggest what Queen should do.",
+                    notice: t.notice, trigger: t.consent == nil ? 0 : 1) {
+            if let c = t.consent {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(c).font(.system(size: 14)).foregroundStyle(Ink.amber)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -273,16 +264,6 @@ struct TripleConversation: View {
                         }
                         .padding(16)
                     }
-                    if !t.notice.isEmpty {
-                        Text(t.notice).font(.system(size: 12, design: .monospaced)).foregroundStyle(Ink.red)
-                            .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                            .padding(.horizontal, 16).padding(.vertical, 8)
-                    }
-                    Color.clear.frame(height: 1).id("end")
-                }
-            }
-            .onChange(of: t.messages) { _ in proxy.scrollTo("end", anchor: .bottom) }
-            .onChange(of: t.consent) { _ in proxy.scrollTo("end", anchor: .bottom) }
         }
     }
 }

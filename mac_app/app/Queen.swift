@@ -7,6 +7,7 @@ struct Msg: Identifiable, Equatable {
     let id = UUID()
     var role: String
     var content: String
+    var cost: Double = 0          // CAPI: what this answer cost
 }
 
 struct ChatMeta: Identifiable, Equatable {
