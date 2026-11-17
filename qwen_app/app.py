@@ -631,6 +631,16 @@ try:
 except Exception as _ps_exc:
     print(f"[poster_skill] not loaded: {_ps_exc}")
 
+# 17.11.2026: TRIPLE CHAT, one room for Marko, Queen and Claude (triple_chat.py). The helpers below are defined later in
+# this file, so they are looked up when a turn runs, not now.
+try:
+    from triple_chat import register as _register_triple
+    _register_triple(app, pool, lambda *a, **k: build_queen_system_prompt(*a, **k), lambda *a, **k: record_spend(*a, **k),
+                     lambda *a, **k: _local_command_answer(*a, **k), lambda *a, **k: _after_turn(*a, **k),
+                     DEFAULT_MODEL, MAX_OUTPUT_TOKENS)
+except Exception as _triple_exc:
+    print(f"[triple_chat] not loaded: {_triple_exc}")
+
 # 14.11.2026: Accessibility reading (ax_read: the Swift axread, else Python) and WhatsApp through it (no screenshot)
 try:
     from ax_read import register as _register_ax

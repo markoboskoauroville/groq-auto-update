@@ -22,7 +22,7 @@ too) and the Swift window gets a TRIPLE mode.
    POST /api/triple/turn {id,text,to:queen|claude|both|auto} -> NDJSON lines {"speaker":..,"start":1} / {"t":tok} /
    {"need_consent":msg} / {"done":1}. Addressing parser (Queen/Qwen/Quinn, Claude/Cloud/Klod; default last addressed).
    Done = py_compile passes.
-3. [ ] Register in `qwen_app/app.py` (try/except like brain; pass pool, build_queen_system_prompt, record_spend,
+3. [x] Register in `qwen_app/app.py` (try/except like brain; pass pool, build_queen_system_prompt, record_spend,
    _local_command_answer, _after_turn, DEFAULT_MODEL, MAX_OUTPUT_TOKENS); install.sh copies it.
 4. [ ] Swift window: `mac_app/app/Triple.swift` (model + view); App.swift: word TRIPLE in the status line switches the
    conversation to the room; ASK QUEEN / ASK CLAUDE / ASK BOTH, CLAUDE VIA LOCAL|API + model picker, rooms; VERSION 9.
@@ -31,7 +31,7 @@ too) and the Swift window gets a TRIPLE mode.
 6. [ ] version.json 9, LESSONS.md, skill groq-ai-studio section, ~/Downloads/API PROJECTS.md line; ./install.sh;
    `mac_app/install.sh v9`; Queen restarted.
 
-**Where we are:** steps 1-2 done (triple_chat.py written, py_compile ok, `register(app, pool, build_queen_system_prompt, record_spend, local_command_answer, after_turn, default_model, max_tokens)`). Left: 3 register + install.sh, 4 Swift, 5 skill, 6 release. Trap: Claude models have no rate in get_model_rates, so record_spend books them at its fallback rate (cost approximate).
+**Where we are:** steps 1-3 done (registered lazily in app.py; install.sh already copies *.py, run ./install.sh at the end of step 3 below). Earlier: steps 1-2 done (triple_chat.py written, py_compile ok, `register(app, pool, build_queen_system_prompt, record_spend, local_command_answer, after_turn, default_model, max_tokens)`). Left: 3 register + install.sh, 4 Swift, 5 skill, 6 release. Trap: Claude models have no rate in get_model_rates, so record_spend books them at its fallback rate (cost approximate).
 
 **Hand-over (17.11.2026, plan at 1%):** Marko: "And since we are losing the credits soon, only 1%, please give a task to Queen and
 API through our Queen API of Claude to finish updating the app. So they need to do, you just need to save this 1% as much as possible."
