@@ -8,7 +8,7 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 
-let VERSION = 22
+let VERSION = 23
 let APP_NAME = "Queen"
 
 enum Ink {
@@ -424,7 +424,7 @@ struct Root: View {
                         CapiRoomList().frame(minWidth: 230, idealWidth: capiListW, maxWidth: capiListW)
                         SplitHandle(width: $capiListW, minW: 230, maxW: 520, reset: 330)
                     }
-                    CapiConversation().frame(minWidth: 280)
+                    CapiPane()
                 } else if tr.active {
                     if showRooms {
                         RoomList().frame(width: 240)
@@ -439,9 +439,9 @@ struct Root: View {
                     Conversation()
                 }
             }
-            Hairline()
+            if !cp.active { Hairline() }
             if cp.active {
-                CapiInput()
+                EmptyView()                     // v23: the CAPI input lives inside the right pane (CapiPane)
             } else if tr.active {
                 TripleControls(showRooms: $showRooms)
                 Hairline()

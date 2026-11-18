@@ -1,6 +1,6 @@
 {
-  "version": 22,
-  "updated_at": "2026-11-18T18:00:00+0100",
+  "version": 23,
+  "updated_at": "2026-11-18T19:00:00+0100",
   "log": [
     {
       "version": 1,
@@ -150,6 +150,15 @@
       "message": "v22: rows on one baseline (FlowLayout aligns by firstTextBaseline), green outline on the active chat, TOPIC line, CHATS toggle back",
       "files": [
         "mac_app/app/Flow.swift",
+        "mac_app/app/Capi.swift",
+        "mac_app/app/App.swift"
+      ]
+    },
+    {
+      "version": 23,
+      "timestamp": "2026-11-18T19:00:00+0100",
+      "message": "v23: CAPI input inside the right pane, list to the bottom, unlimited resizable input (NSTextView) with scroll bar",
+      "files": [
         "mac_app/app/Capi.swift",
         "mac_app/app/App.swift"
       ]

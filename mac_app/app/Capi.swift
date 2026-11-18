@@ -424,23 +424,136 @@ struct CapiConversation: View {
     }
 }
 
+/// v23: the right pane = TOPIC line + chat stream + the input, so the input is exactly as wide as the stream and the chat list
+/// (left) runs to the bottom of the window. Marko: "resize it to be at the size of chat stream ... extend chat list to the
+/// bottom of the page."
+struct CapiPane: View {
+    @AppStorage("ui.capiInputH") private var inputH: Double = 110
+    var body: some View {
+        GeometryReader { g in
+            VStack(spacing: 0) {
+                CapiConversation()
+                Hairline()
+                CapiInput(height: $inputH, maxH: max(80, Double(g.size.height) * 0.7))
+            }
+        }
+        .frame(minWidth: 280)
+    }
+}
+
+/// An unlimited text box: NSTextView in an NSScrollView (no character or line cap), visible scroll bar when the text is longer
+/// than the box, Return sends, Shift+Return (or Option+Return) is a new line.
+struct PromptEditor: NSViewRepresentable {
+    @Binding var text: String
+    var onSend: () -> Void
+    var focusTick: Int
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let sv = NSScrollView()
+        sv.drawsBackground = false
+        sv.hasVerticalScroller = true
+        sv.autohidesScrollers = true
+        sv.scrollerStyle = .legacy            // a visible bar whenever the text overflows the box
+        sv.borderType = .noBorder
+        let tv = NSTextView()
+        tv.delegate = context.coordinator
+        tv.isRichText = false
+        tv.allowsUndo = true
+        tv.font = NSFont.systemFont(ofSize: 14)
+        tv.textColor = NSColor(Ink.text)
+        tv.insertionPointColor = NSColor(Ink.text)
+        tv.drawsBackground = false
+        tv.isAutomaticQuoteSubstitutionEnabled = false
+        tv.isAutomaticDashSubstitutionEnabled = false
+        tv.isAutomaticTextReplacementEnabled = false
+        tv.isAutomaticSpellingCorrectionEnabled = false
+        tv.textContainerInset = NSSize(width: 4, height: 6)
+        tv.isVerticallyResizable = true
+        tv.isHorizontallyResizable = false
+        tv.autoresizingMask = [.width]
+        tv.textContainer?.widthTracksTextView = true
+        tv.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        tv.setAccessibilityIdentifier("capi-prompt")
+        tv.setAccessibilityLabel("Write to Claude Code")
+        sv.documentView = tv
+        DispatchQueue.main.async { tv.window?.makeFirstResponder(tv) }
+        return sv
+    }
+
+    func updateNSView(_ sv: NSScrollView, context: Context) {
+        context.coordinator.parent = self
+        guard let tv = sv.documentView as? NSTextView else { return }
+        if tv.string != text { tv.string = text }
+        if context.coordinator.tick != focusTick {
+            context.coordinator.tick = focusTick
+            DispatchQueue.main.async { tv.window?.makeFirstResponder(tv) }
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: PromptEditor
+        var tick = 0
+        init(_ p: PromptEditor) { parent = p }
+        func textDidChange(_ n: Notification) {
+            if let tv = n.object as? NSTextView { parent.text = tv.string }
+        }
+        func textView(_ tv: NSTextView, doCommandBy sel: Selector) -> Bool {
+            if sel == #selector(NSResponder.insertNewline(_:)) {
+                let f = NSApp.currentEvent?.modifierFlags ?? []
+                if f.contains(.shift) || f.contains(.option) { tv.insertNewlineIgnoringFieldEditor(nil); return true }
+                parent.onSend()
+                return true
+            }
+            return false
+        }
+    }
+}
+
 struct CapiInput: View {
     @ObservedObject var c = Capi.shared
+    @Binding var height: Double
+    var maxH: Double
     @State private var text = ""
-    @FocusState private var focused: Bool
+    @State private var startH: Double? = nil
+    @State private var tick = 0
     var body: some View {
-        VStack(spacing: 6) {
-            TextField("Write to Claude Code (API credit)", text: $text, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 14))
-                .foregroundStyle(Ink.text)
-                .lineLimit(1...8)
-                .focused($focused)
-                .onSubmit { go() }
-                .padding(10)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Ink.panel))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Ink.line, lineWidth: 1))
-                .accessibilityIdentifier("capi-prompt")
+        VStack(spacing: 4) {
+            // the drag handle on the top edge of the box: drag up to make the box taller (min about 2 lines, max 70% of the pane)
+            ZStack {
+                Rectangle().fill(Color.clear).frame(height: 10)
+                Capsule().fill(Ink.line).frame(width: 36, height: 3)
+            }
+            .contentShape(Rectangle())
+            .onHover { inside in if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() } }
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { g in
+                    if startH == nil { startH = height }
+                    height = min(maxH, max(58, (startH ?? height) - Double(g.translation.height)))
+                }
+                .onEnded { _ in startH = nil })
+            .help("Drag to resize the text box; double-click for the usual height")
+            .onTapGesture(count: 2) { height = 110 }
+            .accessibilityElement().accessibilityLabel("Text box height").accessibilityValue("\(Int(height)) points")
+            .accessibilityAdjustableAction { d in
+                switch d {
+                case .increment: height = min(maxH, height + 20)
+                case .decrement: height = max(58, height - 20)
+                @unknown default: break
+                }
+            }
+            ZStack(alignment: .topLeading) {
+                PromptEditor(text: $text, onSend: { go() }, focusTick: tick)
+                if text.isEmpty {
+                    Text("Write to Claude Code (API credit)").font(.system(size: 14)).foregroundStyle(Ink.dim)
+                        .padding(.horizontal, 8).padding(.vertical, 6).allowsHitTesting(false)
+                }
+            }
+            .frame(height: min(height, maxH))
+            .background(RoundedRectangle(cornerRadius: 6).fill(Ink.panel))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Ink.line, lineWidth: 1))
             FlowLayout(spacing: 4, rowSpacing: 0) {
                 Text("MODEL").foregroundStyle(Ink.dim).unit().padding(.horizontal, 6)
                 ForEach(Triple.models, id: \.self) { m in
@@ -453,11 +566,11 @@ struct CapiInput: View {
                     Word(text: "SEND", id: "capi-send", color: has ? Ink.accent : Ink.grey, help: "Send to Claude Code (Return)") { go() }
                 }
             }
+            .clipped()
             .font(.system(size: 13, weight: .bold, design: .monospaced))
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(12)
-        .onAppear { focused = true }
+        .padding(.horizontal, 12).padding(.bottom, 10).padding(.top, 2)
     }
 
     func go() {
