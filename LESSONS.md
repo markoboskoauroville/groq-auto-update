@@ -252,3 +252,7 @@ One chat module: MessageList + Bubble + MarkdownView + SpeakerButton serve norma
 - The Python backend Queen runs on is Homebrew 3.13 under the Swift app: a library installed for the shell's python3 is not there. Check with that interpreter (the Python.app binary in `ps`), install with pip --break-system-packages, then kill the backend child (the Swift app restarts it within 20 s). A kill right after pip once still showed the old "not installed" line: retest after the new pid.
 - Vertex AI refuses API keys (401 "API keys are not supported"): Claude there needs ADC plus Anthropic's access; a missing sign-in is a plain "not ready yet" line, never a stack trace.
 - The CAPI "main chat" is Swift (Capi.swift) over capi_chat.py, not index.html: provider radios and the file picker live there, and the Swift part is compiled only by the mac-app workflow.
+
+## v25 (18.11.2026)
+- pgrep -f on this Mac did not find the Queen backend although it ran (lsof -iTCP:8766 finds it): kill by the pid from lsof, the Swift app restarts it within 20 s.
+- A brief's "about 16:30" can be later than the Mac clock (16:14): anchor a credit base to a time that has passed, and say so.

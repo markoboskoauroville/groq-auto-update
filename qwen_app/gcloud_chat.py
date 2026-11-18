@@ -28,7 +28,10 @@ PROJECT = "antigravity-cloud-offload"
 GEMINI = "https://generativelanguage.googleapis.com/v1beta"
 LEDGER = Path.home() / ".cache" / "gcloud-ledger.jsonl"
 START_FILE = Path.home() / ".groq" / "capi_gcloud_balance.json"
-START_USD = 254.0                      # 18.11.2026, as Marko told it; expires about 9.12.2026
+# THE ONE CONFIG VALUE for the free credit (update here, or write the same keys to START_FILE): the Billing -> Credits page
+# read "GCP Free Credit $225.31 remaining (75%), expiring in 14 days" on 18.11.2026 about 16:10 (+0100; the brief said 16:30 but the Mac clock read 16:14 when applied); expiry 2.12.2026.
+CREDIT = {"start_usd": 225.31, "at": 1795014607.0, "expires": "2026-12-02", "read": "18.11.2026 about 16:10"}
+VERTEX_ENABLED = False                 # v25: Google Cloud is Gemini only (Claude there is a paid Marketplace product); code kept dormant
 MAX_FILE = 20 * 1024 * 1024
 VERTEX_MODELS = ["claude-opus-4-5@20251101", "claude-sonnet-4-5@20250929", "claude-haiku-4-5@20251001"]
 FALLBACK_GEMINI = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-pro"]
@@ -82,12 +85,22 @@ def _cost(model, tin, tout):
 
 
 # ------------------------------------------------------------------ credit
-def spent():
-    t0 = 0
+def config():
+    c = dict(CREDIT)
     try:
-        t0 = float(json.loads(START_FILE.read_text()).get("at") or 0)
+        c.update({k: v for k, v in json.loads(START_FILE.read_text()).items() if k in c})
     except Exception:
         pass
+    return c
+
+
+def expiry_text():
+    y, m, d = config()["expires"].split("-")
+    return f"{int(d)}.{int(m)}.{y}"
+
+
+def spent():
+    t0 = float(config().get("at") or 0)
     s = 0.0
     try:
         for line in open(LEDGER):
@@ -103,16 +116,12 @@ def spent():
 
 
 def left():
-    try:
-        start = float(json.loads(START_FILE.read_text()).get("start_usd"))
-    except Exception:
-        start = START_USD
-    return round(max(0.0, start - spent()), 4)
+    return round(max(0.0, float(config()["start_usd"]) - spent()), 4)
 
 
 def set_balance(usd):
     START_FILE.parent.mkdir(parents=True, exist_ok=True)
-    START_FILE.write_text(json.dumps({"start_usd": float(usd), "at": time.time()}))
+    START_FILE.write_text(json.dumps({"start_usd": float(usd), "at": time.time(), "expires": config()["expires"]}))
 
 
 def ledger(cost, prompt, model):
@@ -157,7 +166,7 @@ def default_gemini(models):
 
 def models_info():
     g = gemini_models()
-    return {"gemini": g, "claude": VERTEX_MODELS, "default": default_gemini(g), "has_key": has_key()}
+    return {"gemini": g, "claude": VERTEX_MODELS if VERTEX_ENABLED else [], "default": default_gemini(g), "has_key": has_key()}
 
 
 # ------------------------------------------------------------------ attachments
@@ -319,6 +328,8 @@ def claude_turn(model, history, text, files):
 def run(model, history, text, files):
     """One turn on Google Cloud. -> dict {text, cost, tin, tout} or {error}. Never raises; never carries a key."""
     try:
+        if is_vertex(model) and not VERTEX_ENABLED:
+            return {"error": "Google Cloud here is Gemini only: pick a Gemini model."}
         if is_vertex(model):
             ans, tin, tout = claude_turn(model, history, text, files)
         else:

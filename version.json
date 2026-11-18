@@ -1,6 +1,6 @@
 {
-  "version": 24,
-  "updated_at": "2026-11-18T20:00:00+0100",
+  "version": 25,
+  "updated_at": "2026-11-18T16:30:00+0100",
   "log": [
     {
       "version": 1,
@@ -41,7 +41,7 @@
     {
       "version": 5,
       "timestamp": "2026-11-11T22:12:52+0100",
-      "message": "Add complete Key Tester feature with two-tab sidebar UI (⚡ Groq Studio / 🔑 Key Tester) and backend routes for masked key inventory + live multi-provider key testing",
+      "message": "Add complete Key Tester feature with two-tab sidebar UI (\u26a1 Groq Studio / \ud83d\udd11 Key Tester) and backend routes for masked key inventory + live multi-provider key testing",
       "files": [
         "index.html",
         "app.py"
@@ -173,6 +173,18 @@
         "mac_app/app/Capi.swift",
         "mac_app/app/App.swift",
         "queen_skills/google-cloud-provider.md"
+      ]
+    },
+    {
+      "version": 25,
+      "timestamp": "2026-11-18T16:30:00+0100",
+      "message": "v25: Google Cloud = Gemini only (Vertex dormant), CAPI chats bypass Queen and are never trained, per-chat QUEEN: OFF switch, radio switching both ways, credit base $225.31 with expiry 2.12.2026",
+      "files": [
+        "qwen_app/gcloud_chat.py",
+        "qwen_app/capi_chat.py",
+        "qwen_app/training_log.py",
+        "mac_app/app/Capi.swift",
+        "mac_app/app/App.swift"
       ]
     }
   ]

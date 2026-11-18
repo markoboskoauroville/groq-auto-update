@@ -62,13 +62,18 @@ final class Capi: ObservableObject {
     @Published var gGemini: [String] = []
     @Published var gClaude: [String] = []
     @Published var gDefault = ""
+    @Published var queenOn = false               // v25: this chat's switch; off = Queen bypassed, not trained (the default)
+    @Published var creditExpiry = ""             // v25: Google Cloud free credit expiry, e.g. 2.12.2026
     static let maxFile = 20 * 1024 * 1024
     @Published var creditNote = ""
     private var poller: Task<Void, Never>?
     private var shownSig = ""                    // what is on screen: count + last text, so a poll redraws only on change
     private var busyIds: Set<String> = []
 
-    var creditText: String { left.map { String(format: "\(providerName) ($%.2f left)", $0) } ?? "\(providerName) ($ ?)" }
+    var creditText: String {
+        let ex = creditExpiry.isEmpty ? "" : ", to " + creditExpiry
+        return left.map { String(format: "\(providerName) ($%.2f left", $0) + ex + ")" } ?? "\(providerName) ($ ?)"
+    }
     var folderName: String { (cwd as NSString).lastPathComponent }
 
     @MainActor
@@ -129,6 +134,7 @@ final class Capi: ObservableObject {
         provider = (j["provider"] as? String) ?? provider
         providerName = (j["name"] as? String) ?? providerName
         creditNote = (j["note"] as? String) ?? ""
+        creditExpiry = (j["expires"] as? String) ?? ""
         if let l = j["providers"] as? [[String: Any]] {
             let p = l.compactMap { x -> ProviderItem? in
                 guard let i = x["id"] as? String, let n = x["name"] as? String else { return nil }
@@ -194,6 +200,7 @@ final class Capi: ObservableObject {
         convId = id
         title = (room["title"] as? String) ?? "CAPI chat"
         model = (room["model"] as? String) ?? model
+        queenOn = (room["queen"] as? String) == "on"
         if let g = room["gmodel"] as? String, !g.isEmpty { gmodel = g } else if gmodel.isEmpty { gmodel = gDefault }
         cwd = (room["cwd"] as? String) ?? cwd
         total = (room["total"] as? Double) ?? 0
@@ -242,6 +249,13 @@ final class Capi: ObservableObject {
 
     @MainActor
     func setModel(_ m: String) { model = m; saveSettings() }
+
+    @MainActor
+    func setQueen(_ on: Bool) {
+        queenOn = on
+        let id = convId
+        Task { @MainActor in _ = await Queen.shared.json("/api/capi/queen", body: ["id": id, "on": on]) }
+    }
 
     @MainActor
     func setGModel(_ m: String) { gmodel = m; saveSettings() }
@@ -432,6 +446,9 @@ struct CapiHeader: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(String(format: "this chat $%.4f", c.total).replacingOccurrences(of: " ", with: "\u{00A0}"))
                     .foregroundStyle(Ink.dim).unit()
+                Word(text: c.queenOn ? "QUEEN: ON" : "QUEEN: OFF", id: "capi-queen", color: c.queenOn ? Ink.amber : Ink.green,
+                     help: c.queenOn ? "Queen may use this chat (her capi skill). Click to bypass her again."
+                                     : "Queen is bypassed in this chat: no Queen prompt, no Groq, nothing recorded for her training, her capi skill refused. Click to allow her.") { c.setQueen(!c.queenOn) }
                 if !c.keyNote.isEmpty {
                     Text(c.keyNote.replacingOccurrences(of: " ", with: "\u{00A0}"))
                         .foregroundStyle(c.keyNote.hasPrefix("API key loaded") ? Ink.green : Ink.red).unit()
@@ -678,13 +695,12 @@ struct CapiInput: View {
                 if c.provider == "gcloud" {
                     Menu {
                         Section("Gemini") { ForEach(c.gGemini, id: \.self) { m in Button(m) { c.setGModel(m) } } }
-                        Section("Claude on Google Cloud") { ForEach(c.gClaude, id: \.self) { m in Button(m) { c.setGModel(m) } } }
                     } label: {
                         Text(c.gmodel.isEmpty ? "…" : c.gmodel).foregroundStyle(Ink.claude).unit()
                     }
                     .menuStyle(.borderlessButton).fixedSize()
                     .accessibilityIdentifier("capi-gmodel")
-                    .help("Gemini models are listed live; Claude on Google Cloud needs Anthropic's access and a gcloud sign-in")
+                    .help("Gemini models, listed live from Google; paid from the free credit")
                 } else {
                     ForEach(Triple.models, id: \.self) { m in
                         Word(text: Triple.short(m), id: "capi-model-" + m, color: c.model == m ? Ink.claude : Ink.grey, help: m) { c.setModel(m) }

@@ -69,8 +69,8 @@ def _save(room):
     os.replace(tmp, p)
 
 
-def _new(cwd=None, model=None):
-    room = {"id": secrets.token_hex(5), "title": "CAPI chat", "provider": get_provider(), "model": model if model in MODELS else DEFAULT_MODEL, "gmodel": "",
+def _new(cwd=None, model=None, queen="off"):
+    room = {"id": secrets.token_hex(5), "title": "CAPI chat", "provider": get_provider(), "model": model if model in MODELS else DEFAULT_MODEL, "gmodel": "", "queen": queen,
             "cwd": _ok_cwd(cwd), "session": str(uuid.uuid4()), "started": False, "total": 0.0, "messages": [],
             "created": time.time(), "updated": _now()}
     _save(room)
@@ -81,6 +81,24 @@ def _ok_cwd(cwd):
     home = str(Path.home())
     p = os.path.realpath(os.path.expanduser(cwd or DEFAULT_CWD))
     return p if (p == home or p.startswith(home + os.sep)) and os.path.isdir(p) else DEFAULT_CWD
+
+
+# ---------------------------------------------------------------- Queen bypass (v25)
+# Marko, 18.11.2026: CAPI chats on Anthropic (local Claude Code) and Google Cloud (Gemini) are a bypass of Queen: no Queen system
+# prompt or queen_skills, no Groq/qwen call, nothing recorded for her training. This module never imports app.py's chat path,
+# training_log, skills or Groq; the only Queen-side doors are guarded here: POST /api/capi/ask (her `capi` skill) refuses a chat
+# whose switch is QUEEN: OFF (the default), and every CAPI thread sets training_log.TURN.bypass so training_log.record() drops
+# anything written from it. Per chat: room["queen"] = "off" | "on" (POST /api/capi/queen {id,on}).
+def _bypass_queen():
+    try:
+        import training_log
+        training_log.TURN.bypass = True
+    except Exception:
+        pass
+
+
+def _queen_on(room):
+    return (room or {}).get("queen") == "on"
 
 
 # ---------------------------------------------------------------- providers (v17)
@@ -341,6 +359,8 @@ class Conv:
         with self.lock:
             want = get_provider()          # v17: the radio decides; a chat on the other provider restarts on this one
             if self.room.get("provider") != want:
+                if self.room.get("provider") == "gcloud" and want != "gcloud":
+                    self.force_primer = True       # v25: Gemini turns happened outside Claude's session: send the history again
                 if self.running():
                     self.stop()
                     self.proc = None
@@ -350,6 +370,9 @@ class Conv:
                 return self._send_gcloud(text, files)
             if not self.start():
                 return False
+            if getattr(self, "force_primer", False):
+                self.primer = any(m.get("role") in ("marko", "claude") for m in self.room.get("messages", []))
+                self.force_primer = False
             r = self.room
             if self.pending is not None:      # a turn still open (should not happen: the window waits) is closed first
                 self._mark("done")
@@ -407,6 +430,8 @@ class Conv:
                 for m in r["messages"] if m.get("role") in ("marko", "claude")]
         models = None
         model = r.get("gmodel") or ""
+        if gcloud_chat.is_vertex(model) and not gcloud_chat.VERTEX_ENABLED:
+            model = ""                                    # v25: Gemini only
         if not model:
             model = gcloud_chat.default_gemini(gcloud_chat.gemini_models())
             r["gmodel"] = model
@@ -434,6 +459,7 @@ class Conv:
 
     def _gworker(self, model, hist, text, files):
         import gcloud_chat
+        _bypass_queen()
         self._mark("received")
         res = gcloud_chat.run(model, hist, text, files)
         with self.lock:
@@ -636,6 +662,18 @@ def autoname(room):
     import urllib.request
     prov = get_provider()
     P = PROVIDERS[prov]
+    if prov == "gcloud":                    # v25: Gemini names the chat (flash-lite, a few tokens)
+        import gcloud_chat
+        hist = "\n\n".join(("Marko: " if m["role"] == "marko" else "AI: ") + m["text"]
+                            for m in room.get("messages", []) if m.get("role") in ("marko", "claude"))
+        if not hist.strip():
+            return {"error": "the chat is empty"}
+        res = gcloud_chat.run(next((m for m in gcloud_chat.gemini_models() if "flash-lite" in m and "preview" not in m), gcloud_chat.default_gemini(gcloud_chat.gemini_models())),
+                              [], "Read this chat and answer with ONLY a title of 2 to 5 words that says what it is about. No quotes, no full stop.\n\n" + hist[-8000:], [])
+        if "error" in res:
+            return {"error": res["error"]}
+        title = re.sub(r"[\"'`*#\n]+", " ", res["text"]).strip().rstrip(".")[:60].strip()
+        return {"title": title, "cost": res["cost"], "provider": prov, "left": _credit_left(prov)} if title else {"error": "Gemini gave no title"}
     key = _key(prov)
     if not key:
         return {"error": "no " + P["name"] + " key: use the gear to pick its file"}
@@ -684,12 +722,28 @@ def _credit_info():
     elif cur == "oxyy":
         note = "Oxyy has no balance endpoint: the credit is your starting balance minus what Queen booked (estimate)."
     if cur == "gcloud":
-        note = "Google Cloud free credit ($254 on 18.11.2026, expires about 9.12.2026), project antigravity-cloud-offload: the number is an estimate from token prices."
-    return {"left": left, "has_key": bool(_key(cur)), "provider": cur, "name": PROVIDERS[cur]["name"],
+        import gcloud_chat
+        c = gcloud_chat.config()
+        note = (f"Google Cloud free credit, project antigravity-cloud-offload: ${c['start_usd']:.2f} on {c['read']} (Billing page) minus "
+                f"Queen's ledger since; expires {gcloud_chat.expiry_text()}. The number is an estimate from token prices.")
+    expires = ""
+    if cur == "gcloud":
+        import gcloud_chat
+        expires = gcloud_chat.expiry_text()
+    return {"expires": expires, "left": left, "has_key": bool(_key(cur)), "provider": cur, "name": PROVIDERS[cur]["name"],
             "providers": provs, "note": note}
 
 
 def register(app):
+    @app.before_request
+    def _capi_bypass_flag():
+        # server threads are reused: the flag is set for /api/capi/* and cleared for everything else
+        try:
+            import training_log
+            training_log.TURN.bypass = request.path.startswith("/api/capi/")
+        except Exception:
+            pass
+
     def ndj(o):
         return json.dumps(o, ensure_ascii=False) + "\n"
 
@@ -728,6 +782,18 @@ def register(app):
         except Exception:
             return jsonify({"ok": False, "error": "a number in dollars"}), 400
         return jsonify({"ok": True, **_credit_info()})
+
+    @app.post("/api/capi/queen")
+    def capi_queen():
+        """{id,on:true|false}: the chat's QUEEN switch. Off (default) = Queen may not use this chat (her capi skill is refused)."""
+        b = body()
+        c = _conv(b.get("id", ""))
+        if not c:
+            return jsonify({"ok": False, "error": "no such chat"}), 404
+        with c.lock:
+            c.room["queen"] = "on" if b.get("on") else "off"
+            c.save()
+        return jsonify({"ok": True, "queen": c.room["queen"]})
 
     @app.post("/api/capi/key")
     def capi_key():
@@ -880,7 +946,10 @@ def register(app):
         text = (b.get("text") or "").strip()
         if not text:
             return jsonify({"error": "empty"}), 400
-        r = _load(b.get("id", "")) or _new(b.get("cwd"), b.get("model") or "claude-haiku-5-5")
+        r = _load(b.get("id", "")) or _new(b.get("cwd"), b.get("model") or "claude-haiku-5-5", queen="on")   # made by her: hers
+        if not _queen_on(r):
+            return jsonify({"error": "This chat has QUEEN: OFF, so Queen may not use it. Marko switches it on in the chat's header.",
+                            "answer": "", "id": r["id"]}), 403
         out, cost, err = [], 0.0, None
         for e in run_turn(r, text):
             if "text" in e:

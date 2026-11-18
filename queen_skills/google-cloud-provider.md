@@ -5,7 +5,7 @@ Marko: "One more radio button and a complete setup to get API enabled ... utiliz
 
 ## What it is
 The third PROVIDER radio in the CAPI tab: ANTHROPIC | OXYY | GOOGLE CLOUD. Choosing it IS the consent to spend: it pays from the
-Google Cloud free credit ($254 on 18.11.2026, expires about 9.12.2026), project `antigravity-cloud-offload`. The credit shown
+Google Cloud free credit ($225.31 on 18.11.2026 per the Billing page, expires 2.12.2026; base and expiry are the CREDIT dict in qwen_app/gcloud_chat.py), project `antigravity-cloud-offload`. The credit shown
 is an estimate (starting balance minus a ledger of token prices, ~/.cache/gcloud-ledger.jsonl; `POST /api/capi/gcloud_balance
 {usd}` resets the start). Code: qwen_app/gcloud_chat.py, wired into qwen_app/capi_chat.py (no process: one HTTP call per turn).
 
@@ -33,3 +33,7 @@ Server: `POST /api/capi/send {id,text,files:[{name,mime,b64}]}`.
 - The room keeps `gmodel` (Google Cloud model) apart from `model` (Claude Code model).
 - google-auth must be installed for the Python that runs Queen's backend (requirements.txt).
 - Tests are tiny on purpose: one "PONG" turn costs about $0.0002.
+
+**Queen is bypassed (v25).** CAPI chats on Anthropic and Google Cloud never touch Queen: no Queen prompt or skills, no Groq call, nothing recorded for her training (training_log.record drops anything from /api/capi/* and CAPI threads). Per-chat switch QUEEN: OFF (default) / ON in the header; OFF also makes POST /api/capi/ask (her capi skill) answer 403. This skill only documents it; Marko decided Queen is not asked or trained about this work.
+
+**Queen is bypassed (v25).** CAPI chats on Anthropic and Google Cloud never touch Queen: no Queen prompt or skills, no Groq call, nothing recorded for her training (training_log.record drops anything from /api/capi/* and CAPI threads). Per-chat switch QUEEN: OFF (default) / ON in the header; OFF also makes POST /api/capi/ask (her capi skill) answer 403. Marko decided Queen is not asked or trained about this work.

@@ -41,7 +41,11 @@ def _skills_hash():
 
 
 def record(kind, **data):
-    """Append one event. Never raises: logging must not break a chat."""
+    """Append one event. Never raises: logging must not break a chat.
+    v25 (18.11.2026): a thread marked TURN.bypass (every /api/capi/* request and CAPI worker thread) records NOTHING: CAPI chats
+    (Anthropic / Google Cloud) are a bypass of Queen and never train her."""
+    if getattr(TURN, "bypass", False):
+        return
     try:
         EVENTS.mkdir(parents=True, exist_ok=True)
         ev = {"kind": kind, "at": time.strftime("%Y-%m-%dT%H:%M:%S"), **data}

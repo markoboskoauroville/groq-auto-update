@@ -8,7 +8,7 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 
-let VERSION = 24
+let VERSION = 25
 let APP_NAME = "Queen"
 
 enum Ink {
@@ -208,6 +208,7 @@ struct StatusLine: View {
         parts.append("keys \(q.keys)" + (q.cooling > 0 ? " (\(q.cooling) cooling)" : ""))
         parts.append(String(format: "spent $%.4f", q.spent))
         if !q.backend { parts.append("backend 8766 down") }
+        if cp.active { parts.append(cp.queenOn ? "Queen allowed in this chat" : "Queen bypassed · not trained") }
         return parts.map { $0.replacingOccurrences(of: " ", with: "\u{00A0}") }
     }
 }
