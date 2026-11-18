@@ -1,6 +1,6 @@
 {
-  "version": 16,
-  "updated_at": "2026-11-17T12:40:00+0100",
+  "version": 17,
+  "updated_at": "2026-11-18T12:00:00+0100",
   "log": [
     {
       "version": 1,
@@ -93,6 +93,16 @@
         "qwen_app/triple_chat.py",
         "qwen_app/test_triple_chat.py",
         "mac_app/app/App.swift"
+      ]
+    },
+    {
+      "version": 17,
+      "timestamp": "2026-11-18T12:00:00+0100",
+      "message": "v17: CAPI chats (not conversations), new chat always on top (sorted by creation), provider radios Anthropic / Oxyy with own key, credit and cost, RENAME + AUTOMATIC NAME (Haiku)",
+      "files": [
+        "qwen_app/capi_chat.py",
+        "mac_app/app/Capi.swift",
+        "queen_skills/capi.md"
       ]
     }
   ]

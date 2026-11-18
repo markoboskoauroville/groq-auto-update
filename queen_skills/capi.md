@@ -4,7 +4,7 @@ Marko, 17.11.2026: "can queen be used as capi ... add capi tab to queen software
 ~/.local/bin) is a chat with Claude Code that runs headless `claude -p` on his $100 promotional API credit (that credit pays only
 headless runs, not a normal Claude Code window). The CAPI tab (word CAPI in the Queen window, beside TRIPLE) is its nicer face:
 Markdown answers, one line per tool, cost per answer, "API ($NN.NN left)" at the top, model picker (HAIKU, SONNET default,
-OPUS, FABLE), folder picker (default ~/Developer/claude-code), Stop, rooms (one Claude Code session each, so the conversation continues).
+OPUS, FABLE), folder picker (default ~/Developer/claude-code), Stop, chats (one Claude Code session each, so the chat continues).
 
 When you send a task there: Marko asks for real work in a project folder (edit files, run commands, review code) that needs Claude
 Code's hands and is not a question for you or for the TRIPLE room. Cheapest model first: haiku for small things, sonnet to code,
@@ -12,9 +12,15 @@ opus for hard debugging; fable only with a reason. Every run costs real credit: 
 
 How you start a run (one call, answer comes back whole):
 `POST /api/capi/ask {"text": "<the task>", "cwd": "/Users/markobosko/Developer/<project>", "model": "claude-haiku-5-5", "id": "<room id to continue, optional>"}`
--> `{answer, cost, id, left, error}`. Keep the `id` to continue the same conversation. The streaming form for the window is
+-> `{answer, cost, id, left, error}`. Keep the `id` to continue the same chat. The streaming form for the window is
 `POST /api/capi/turn {id, text}` (NDJSON). Other routes: `GET /api/capi/credit`, `/folders`, `/list`, `/get?id=`, `POST /new`, `/settings`, `/stop`, `/delete`.
 
 ONE credit number: every run (capi, claude-api-mode, the tab) is a line in ~/.cache/claude-api-ledger.jsonl; the balance is
 `tools/api_credit.py` (calibrated $96.66 at 17.11.2026 13:50 minus later spend). Never quote another number. Credit expires 15.12.2026.
 Traps: the key is never printed; the run's folder must be inside the home folder; Stop kills the run, the cost so far is still booked.
+
+v17 (18.11.2026), chats, providers, rename. Marko: "change conversation to chat", new chat always at the top; "radio buttons at the top for all API providers"; "a Rename action ... an Automatic Name button".
+- The tab says CHATS / NEW CHAT. The list is ordered by creation time, newest first, and never reorders itself (before v17 it was sorted by last activity, so a new chat sank below any chat that was answering).
+- PROVIDER radios at the top: Anthropic and Oxyy (oxyy.ai, a gateway: Claude through the Messages API at https://api.oxyy.ai, 60% cheaper than Anthropic's list). To switch: `POST /api/capi/provider {"provider":"anthropic"|"oxyy"}` (kept by the server); the next prompt of any chat runs on it (the chat's Claude Code process restarts by itself). Each provider has its own key: the gear picks the file for the CHOSEN provider (`POST /api/capi/key {path, provider}`, key found by shape; Oxyy = 4 characters, a dash, 64 characters).
+- Credit: `GET /api/capi/credit` -> {left, provider, providers[], note}. Anthropic = tools/api_credit.py. Oxyy has no balance endpoint: the credit is a starting balance (click the credit in the window, or `POST /api/capi/oxyy_balance {"usd":N}`) minus the costs Queen booked (~/.cache/oxyy-ledger.jsonl); say it is an estimate. Cost per answer is shown the same way for both. Oxyy's key (18.11.2026) could not call Claude: /v1/models listed only deepseek-flash, Atria-Dawn-Preview, eleven_flash_v2 and those are OpenAI-format only; Claude Code on it needs a key with Claude access.
+- RENAME (beside START / STOP / CLOSE): `POST /api/capi/rename {"id","title"}`. AUTOMATIC NAME: `POST /api/capi/autoname {"id"}` -> {title, cost}: one Haiku call (max_tokens 20, the last ~8k characters of the chat, on the chosen provider) that only suggests; then rename saves it. Renaming does not move the chat in the list.

@@ -6,6 +6,11 @@ import SwiftUI
 import AppKit
 import Foundation
 
+struct ProviderItem: Identifiable, Equatable {
+    let id: String
+    let name: String
+}
+
 struct FolderItem: Identifiable, Equatable {
     var id: String { path }
     let name: String
@@ -40,11 +45,15 @@ final class Capi: ObservableObject {
     var preferred = ""                           // the conversation left open last time (restored at start)
     @Published var notice = ""
     @Published var keyNote = ""                  // "API key loaded (…abcd)" after the gear
+    @Published var provider = "anthropic"        // v17: the radio at the top (anthropic | oxyy), kept by the server
+    @Published var providerName = "Anthropic"
+    @Published var providers: [ProviderItem] = [ProviderItem(id: "anthropic", name: "Anthropic"), ProviderItem(id: "oxyy", name: "Oxyy")]
+    @Published var creditNote = ""
     private var poller: Task<Void, Never>?
     private var shownSig = ""                    // what is on screen: count + last text, so a poll redraws only on change
     private var busyIds: Set<String> = []
 
-    var creditText: String { left.map { String(format: "API ($%.2f left)", $0) } ?? "API ($ ?)" }
+    var creditText: String { left.map { String(format: "\(providerName) ($%.2f left)", $0) } ?? "\(providerName) ($ ?)" }
     var folderName: String { (cwd as NSString).lastPathComponent }
 
     @MainActor
@@ -90,7 +99,52 @@ final class Capi: ObservableObject {
 
     @MainActor
     func loadCredit() async {
-        if let j = await Queen.shared.json("/api/capi/credit") { left = j["left"] as? Double }
+        if let j = await Queen.shared.json("/api/capi/credit") { applyCredit(j) }
+    }
+
+    @MainActor
+    private func applyCredit(_ j: [String: Any]) {
+        left = j["left"] as? Double
+        provider = (j["provider"] as? String) ?? provider
+        providerName = (j["name"] as? String) ?? providerName
+        creditNote = (j["note"] as? String) ?? ""
+        if let l = j["providers"] as? [[String: Any]] {
+            let p = l.compactMap { x -> ProviderItem? in
+                guard let i = x["id"] as? String, let n = x["name"] as? String else { return nil }
+                return ProviderItem(id: i, name: n)
+            }
+            if !p.isEmpty { providers = p }
+        }
+    }
+
+    /// The radio: the server remembers it; new prompts go to that provider (a running chat restarts on it by itself).
+    @MainActor
+    func setProvider(_ id: String) {
+        guard id != provider else { return }
+        provider = id
+        keyNote = ""
+        Task { @MainActor in
+            if let j = await Queen.shared.json("/api/capi/provider", body: ["provider": id]) { self.applyCredit(j) }
+        }
+    }
+
+    /// Oxyy has no balance endpoint: the credit starts from the amount Marko types, then counts down.
+    @MainActor
+    func askStartBalance() {
+        let a = NSAlert()
+        a.messageText = "\(providerName): your balance in dollars"
+        a.informativeText = creditNote
+        let f = NSTextField(frame: NSRect(x: 0, y: 0, width: 160, height: 24))
+        f.placeholderString = "5.00"
+        a.accessoryView = f
+        a.addButton(withTitle: "Set")
+        a.addButton(withTitle: "Cancel")
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        let v = f.stringValue.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)
+        guard let usd = Double(v) else { return }
+        Task { @MainActor in
+            if let j = await Queen.shared.json("/api/capi/oxyy_balance", body: ["usd": usd]) { self.applyCredit(j) }
+        }
     }
 
     @MainActor
@@ -217,7 +271,8 @@ final class Capi: ObservableObject {
     @MainActor
     func pickKeyFile() {
         let p = NSOpenPanel()
-        p.title = "The file with your Anthropic API key"
+        let pid = provider
+        p.title = "The file with your \(providerName) API key"
         p.prompt = "Use this file"
         p.canChooseFiles = true
         p.canChooseDirectories = false
@@ -225,7 +280,7 @@ final class Capi: ObservableObject {
         p.directoryURL = URL(fileURLWithPath: NSHomeDirectory() + "/Downloads/API")
         guard p.runModal() == .OK, let url = p.url else { return }
         Task { @MainActor in
-            guard let j = await Queen.shared.json("/api/capi/key", body: ["path": url.path]) else {
+            guard let j = await Queen.shared.json("/api/capi/key", body: ["path": url.path, "provider": pid]) else {
                 self.keyNote = "Queen did not answer"
                 return
             }
@@ -233,9 +288,27 @@ final class Capi: ObservableObject {
                 self.keyNote = "API key loaded (…\(l))"
                 await self.loadCredit()
             } else {
-                self.keyNote = (j["error"] as? String) ?? "No Anthropic API key (sk-ant-...) in that file."
+                self.keyNote = (j["error"] as? String) ?? "No \(self.providerName) API key in that file."
             }
         }
+    }
+
+    /// RENAME: the name goes to the server (kept in the chat's file); the list order is by creation, so nothing moves.
+    @MainActor
+    func rename(_ id: String, to name: String) async {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty else { return }
+        _ = await Queen.shared.json("/api/capi/rename", body: ["id": id, "title": n])
+        if id == convId { title = n }
+        await loadConvs()
+    }
+
+    /// AUTOMATIC NAME: one Haiku call on the chosen provider; only suggests, Marko saves. -> (title, cost, error)
+    @MainActor
+    func autoName(_ id: String) async -> (String, Double, String) {
+        guard let j = await Queen.shared.json("/api/capi/autoname", body: ["id": id], timeout: 60) else { return ("", 0, "Queen did not answer") }
+        await loadCredit()
+        return ((j["title"] as? String) ?? "", (j["cost"] as? Double) ?? 0, (j["error"] as? String) ?? "")
     }
 
     /// CLOSE deletes the conversation and its history: one confirmation first.
@@ -260,15 +333,26 @@ final class Capi: ObservableObject {
 }
 
 // ---------------------------------------------------------------- the window parts
-/// Top of the tab: the ONE credit number, the working folder, the conversations.
+/// Top of the tab: the provider radios, the ONE credit number, the working folder, the chats.
 struct CapiHeader: View {
     @ObservedObject var c = Capi.shared
     @Binding var showRooms: Bool
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {                          // v17: one radio per API provider
+                Text("PROVIDER").foregroundStyle(Ink.dim).padding(.horizontal, 6)
+                ForEach(c.providers) { p in
+                    Word(text: (c.provider == p.id ? "◉ " : "○ ") + p.name.uppercased(), id: "capi-provider-" + p.id,
+                         color: c.provider == p.id ? Ink.accent : Ink.text,
+                         help: "Use \(p.name) for the next prompts") { c.setProvider(p.id) }
+                }
+                Spacer(minLength: 0)
+            }
             HStack(spacing: 4) {
                 Text(c.creditText.replacingOccurrences(of: " ", with: "\u{00A0}")).foregroundStyle(Ink.red).padding(.horizontal, 6)
                     .accessibilityIdentifier("capi-credit")
+                    .onTapGesture { if c.provider == "oxyy" { c.askStartBalance() } }
+                    .help(c.creditNote.isEmpty ? "Credit left for the chosen provider" : c.creditNote)
                 Image(systemName: "gearshape")                 // v13: the API key file (file picker, key read by shape)
                     .font(.system(size: 13, weight: .regular)).foregroundStyle(Ink.text)
                     .padding(.horizontal, 4).padding(.vertical, 4)
@@ -276,8 +360,8 @@ struct CapiHeader: View {
                     .onTapGesture { c.pickKeyFile() }
                     .axButton("API key file", id: "capi-key-gear") { c.pickKeyFile() }
                     .pressHover()
-                    .help("Choose the file with your Anthropic API key (sk-ant-…); other text around it is fine")
-                Text(String(format: "this conversation $%.4f", c.total).replacingOccurrences(of: " ", with: "\u{00A0}"))
+                    .help("Choose the file with the API key of the chosen provider; other text around it is fine")
+                Text(String(format: "this chat $%.4f", c.total).replacingOccurrences(of: " ", with: "\u{00A0}"))
                     .foregroundStyle(Ink.dim)
                 if !c.keyNote.isEmpty {
                     Text(c.keyNote).foregroundStyle(c.keyNote.hasPrefix("API key loaded") ? Ink.green : Ink.red)
@@ -285,13 +369,13 @@ struct CapiHeader: View {
                         .accessibilityIdentifier("capi-key-note")
                 }
                 Spacer(minLength: 4)
-                Word(text: "CONVERSATIONS", id: "capi-conversations", color: showRooms ? Ink.accent : Ink.text,
-                     help: "Your CAPI conversations: switch, start, stop, close") {
+                Word(text: "CHATS", id: "capi-conversations", color: showRooms ? Ink.accent : Ink.text,
+                     help: "Your CAPI chats: switch, start, stop, close") {
                     showRooms.toggle()
                     if showRooms { Task { await c.loadConvs() } }
                 }
-                Word(text: "NEW CONVERSATION", id: "capi-new-conversation",
-                     help: "A clean conversation: its own Claude Code process") { Task { await c.newConversation() } }
+                Word(text: "NEW CHAT", id: "capi-new-conversation",
+                     help: "A clean chat: its own Claude Code process") { Task { await c.newConversation() } }
             }
             HStack(spacing: 4) {
                 Text("FOLDER").foregroundStyle(Ink.dim).padding(.horizontal, 6)
@@ -317,7 +401,7 @@ struct CapiConversation: View {
     @ObservedObject var c = Capi.shared
     var body: some View {
         MessageList(messages: c.messages,
-                    empty: "Claude Code on your API credit. Ask for anything; it works in the folder above, remembers the conversation across days, and shows one line per tool it uses. Several conversations can work at the same time: CONVERSATIONS.",
+                    empty: "Claude Code on your API credit. Ask for anything; it works in the folder above, remembers the chat across days, and shows one line per tool it uses. Several chats can work at the same time: CHATS.",
                     notice: c.notice) { EmptyView() }
     }
 }
@@ -346,7 +430,7 @@ struct CapiInput: View {
                 }
                 Spacer(minLength: 4)
                 if c.busy {
-                    Word(text: "STOP", id: "capi-stop", color: Ink.amber, help: "Stop this conversation's process (the history stays)") { c.stop() }
+                    Word(text: "STOP", id: "capi-stop", color: Ink.amber, help: "Stop this chat's process (the history stays)") { c.stop() }
                 } else {
                     let has = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     Word(text: "SEND", id: "capi-send", color: has ? Ink.accent : Ink.grey, help: "Send to Claude Code (Return)") { go() }
@@ -366,10 +450,11 @@ struct CapiInput: View {
     }
 }
 
-/// CONVERSATIONS: every stored conversation. Click the title to switch to it; a green line on the left edge while its
+/// CHATS: every stored conversation. Click the title to switch to it; a green line on the left edge while its
 /// process runs; START (resume from the stored history), STOP (history kept), CLOSE (delete, asks first).
 struct CapiRoomList: View {
     @ObservedObject var c = Capi.shared
+    @State private var renaming: ConvMeta? = nil
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -388,12 +473,13 @@ struct CapiRoomList: View {
                         .padding(.leading, 8).padding(.vertical, 8)
                         .contentShape(Rectangle())
                         .onTapGesture { Task { await c.open(r.id) } }
-                        .axButton("Conversation " + r.title, id: "capi-conv-" + r.id,
+                        .axButton("Chat " + r.title, id: "capi-conv-" + r.id,
                                   value: r.running ? (r.busy ? "answering" : "running") : "stopped") { Task { await c.open(r.id) } }
                         .pressHover()
                         HStack(spacing: 0) {
                             act("START", "Start", r, on: !r.running, color: Ink.green) { c.startConv(r.id) }
                             act("STOP", "Stop", r, on: r.running, color: Ink.amber) { c.stopConv(r.id) }
+                            act("RENAME", "Rename", r, on: true, color: Ink.accent) { renaming = r }
                             act("CLOSE", "Close", r, on: true, color: Ink.red) { c.closeConv(r) }
                         }
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
@@ -405,6 +491,7 @@ struct CapiRoomList: View {
             }
         }
         .background(Ink.panel)
+        .sheet(item: $renaming) { r in CapiRenameSheet(conv: r) { renaming = nil } }
     }
 
     static func status(_ r: ConvMeta) -> String {
@@ -422,6 +509,63 @@ struct CapiRoomList: View {
             .axButton(verb + " " + r.title, id: "capi-" + word.lowercased() + "-" + r.id) { if on { action() } }
             .pressHover()
             .help(verb == "Start" ? "Start its own process: it reads the whole history and you continue"
-                  : verb == "Stop" ? "Stop its process; the history stays" : "Delete this conversation and its history")
+                  : verb == "Stop" ? "Stop its process; the history stays"
+                  : verb == "Rename" ? "Give this chat a name of your own, or let Haiku name it" : "Delete this chat and its history")
+    }
+}
+
+
+/// RENAME: a small field with the current name; Return / OK saves, Esc cancels; AUTOMATIC NAME asks Haiku (one cheap call
+/// on the chosen provider) and fills the field, you can still edit before saving.
+struct CapiRenameSheet: View {
+    let conv: ConvMeta
+    let done: () -> Void
+    @ObservedObject var c = Capi.shared
+    @State private var name = ""
+    @State private var working = false
+    @State private var info = ""
+    @FocusState private var focused: Bool
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Rename chat").font(.system(size: 14, weight: .bold)).foregroundStyle(Ink.text)
+            TextField("Name", text: $name)
+                .textFieldStyle(.roundedBorder)
+                .focused($focused)
+                .onSubmit { save() }
+                .accessibilityIdentifier("capi-rename-field")
+            if !info.isEmpty {
+                Text(info).font(.system(size: 11, design: .monospaced)).foregroundStyle(info.hasPrefix("ERROR") ? Ink.red : Ink.dim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 4) {
+                Word(text: working ? "NAMING…" : "AUTOMATIC NAME", id: "capi-autoname", color: working ? Ink.grey : Ink.claude,
+                     help: "One Haiku call reads the whole chat and suggests a name") { auto() }
+                Spacer(minLength: 4)
+                Word(text: "CANCEL", id: "capi-rename-cancel", color: Ink.grey) { done() }
+                    .keyboardShortcut(.cancelAction)
+                Word(text: "OK", id: "capi-rename-ok", color: Ink.accent) { save() }
+            }
+            .font(.system(size: 13, weight: .bold, design: .monospaced))
+        }
+        .padding(16).frame(width: 380)
+        .onAppear { name = conv.title; focused = true }
+    }
+
+    func save() {
+        let n = name
+        Task { @MainActor in await c.rename(conv.id, to: n); done() }
+    }
+
+    func auto() {
+        guard !working else { return }
+        working = true
+        info = ""
+        Task { @MainActor in
+            let (t, cost, err) = await c.autoName(conv.id)
+            working = false
+            if !t.isEmpty { name = t }
+            let price = cost > 0 ? String(format: "Haiku via %@ $%.4f", c.providerName, cost) : ""
+            info = err.isEmpty ? price : "ERROR: " + err + (price.isEmpty ? "" : "  " + price)
+        }
     }
 }

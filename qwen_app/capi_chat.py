@@ -1,4 +1,4 @@
-"""CAPI tab (17.11.2026): chat with Claude Code on Marko's $100 API credit, the same run `capi` does.
+"""CAPI tab (17.11.2026; v17 18.11.2026: chats, provider radios Anthropic / Oxyy): chat with Claude Code on Marko's $100 API credit, the same run `capi` does.
 
 Marko: "can queen be used as capi ... add capi tab to queen software so i can have nicer ui". Then (v12, 17.11.2026):
 "Instead of room, make a new conversation and conversations ... each conversation should start its own process ... running
@@ -70,9 +70,9 @@ def _save(room):
 
 
 def _new(cwd=None, model=None):
-    room = {"id": secrets.token_hex(5), "title": "CAPI chat", "model": model if model in MODELS else DEFAULT_MODEL,
+    room = {"id": secrets.token_hex(5), "title": "CAPI chat", "provider": get_provider(), "model": model if model in MODELS else DEFAULT_MODEL,
             "cwd": _ok_cwd(cwd), "session": str(uuid.uuid4()), "started": False, "total": 0.0, "messages": [],
-            "created": _now(), "updated": _now()}
+            "created": time.time(), "updated": _now()}
     _save(room)
     return room
 
@@ -83,7 +83,39 @@ def _ok_cwd(cwd):
     return p if (p == home or p.startswith(home + os.sep)) and os.path.isdir(p) else DEFAULT_CWD
 
 
-KEY_FILE = Path.home() / ".groq" / "capi_key"      # the gear's key (0600, never printed, never in git)
+# ---------------------------------------------------------------- providers (v17)
+# Marko, 18.11.2026: radio buttons at the top for all API providers, each with its key (gear), credit and cost.
+# anthropic = api.anthropic.com, key sk-ant-..., credit = tools/api_credit.py (the $100 promotional credit).
+# oxyy      = Oxyy (oxyy.ai), a unified gateway: Anthropic Messages API at the bare host https://api.oxyy.ai (x-api-key or
+#             Bearer), OpenAI format at /v1; key shape 4 chars + "-" + 64 chars; NO balance endpoint (probed 18.11.2026), so
+#             the credit is a local ledger from a starting balance Marko enters; Oxyy bills Claude at 40% of Anthropic's list
+#             price (60% off), so the Claude Code cost is multiplied by OXYY_FACTOR (an estimate).
+PROVIDERS = {
+    "anthropic": {"name": "Anthropic", "key_file": Path.home() / ".groq" / "capi_key", "name_hint": "100dolara",
+                  "base_url": "", "factor": 1.0},
+    "oxyy": {"name": "Oxyy", "key_file": Path.home() / ".groq" / "capi_key_oxyy", "name_hint": "oxyy",
+             "base_url": "https://api.oxyy.ai", "factor": 0.4},
+}
+PROVIDER_FILE = Path.home() / ".groq" / "capi_provider.json"
+OXYY_BALANCE = Path.home() / ".groq" / "capi_oxyy_balance.json"      # {"start_usd": 5.0, "at": epoch}
+OXYY_LEDGER = Path.home() / ".cache" / "oxyy-ledger.jsonl"
+KEY_FILE = PROVIDERS["anthropic"]["key_file"]      # the gear's key (0600, never printed, never in git)
+
+
+def get_provider():
+    try:
+        p = json.loads(PROVIDER_FILE.read_text()).get("provider")
+        return p if p in PROVIDERS else "anthropic"
+    except Exception:
+        return "anthropic"
+
+
+def set_provider(p):
+    if p not in PROVIDERS:
+        return False
+    PROVIDER_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PROVIDER_FILE.write_text(json.dumps({"provider": p}))
+    return True
 
 
 def _anthropic_key_in(text):
@@ -96,42 +128,89 @@ def _anthropic_key_in(text):
     return keys[0] if keys else ""
 
 
-def _key():
-    """The gear's file first (~/.groq/capi_key), else the ~/Downloads/API file named *100dolara*."""
+def _oxyy_key_in(text):
+    """Oxyy key by shape: 4 characters, a dash, 64 characters (69 in all); any other text around it is fine."""
+    m = re.search(r"(?<![A-Za-z0-9_-])[A-Za-z0-9]{4}-[A-Za-z0-9_-]{64}(?![A-Za-z0-9_-])", text or "")
+    return m.group(0) if m else ""
+
+
+def _key_in(provider, text):
+    return _oxyy_key_in(text) if provider == "oxyy" else _anthropic_key_in(text)
+
+
+def _key(provider=None):
+    """The gear's file first (~/.groq/capi_key[_oxyy]), else the ~/Downloads/API file whose name has the hint."""
+    provider = provider or get_provider()
+    P = PROVIDERS[provider]
     try:
-        k = _anthropic_key_in(KEY_FILE.read_text(errors="ignore"))
+        k = _key_in(provider, P["key_file"].read_text(errors="ignore"))
         if k:
             return k
     except Exception:
         pass
     for f in glob.glob(str(Path.home() / "Downloads" / "API" / "*")):
-        if "100dolara" in os.path.basename(f).lower():
-            k = _anthropic_key_in(open(f, errors="ignore").read())
+        if P["name_hint"] in os.path.basename(f).lower():
+            k = _key_in(provider, open(f, errors="ignore").read())
             if k:
                 return k
     return ""
 
 
-def load_key_file(path):
-    """The gear: read a file Marko picked, take the Anthropic key out of it by shape, keep it in ~/.groq/capi_key."""
+def load_key_file(path, provider=None):
+    """The gear: read a file Marko picked, take that provider's key out of it by shape, keep it in ~/.groq/capi_key[_oxyy]."""
+    provider = provider if provider in PROVIDERS else get_provider()
     f = Path(os.path.expanduser(path or ""))
     if not f.is_file():
         return {"ok": False, "error": "no such file"}
     if f.stat().st_size > 2_000_000:
         return {"ok": False, "error": "file too big for a key file"}
-    k = _anthropic_key_in(f.read_text(errors="ignore"))
+    k = _key_in(provider, f.read_text(errors="ignore"))
     if not k:
-        return {"ok": False, "error": "No Anthropic API key (sk-ant-...) in that file."}
-    KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = KEY_FILE.with_suffix(".tmp")
+        return {"ok": False, "error": "No Anthropic API key (sk-ant-...) in that file." if provider == "anthropic"
+                else "No Oxyy API key (4 characters, a dash, 64 characters) in that file."}
+    kf = PROVIDERS[provider]["key_file"]
+    kf.parent.mkdir(parents=True, exist_ok=True)
+    tmp = kf.with_suffix(".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as w:
         w.write(k + "\n")
-    os.replace(tmp, KEY_FILE)
-    return {"ok": True, "last4": k[-4:]}
+    os.replace(tmp, kf)
+    return {"ok": True, "last4": k[-4:], "provider": provider}
 
 
-def _credit_left():
+def _oxyy_spent():
+    t0 = 0
+    try:
+        t0 = float(json.loads(OXYY_BALANCE.read_text()).get("at") or 0)
+    except Exception:
+        pass
+    s = 0.0
+    try:
+        for line in open(OXYY_LEDGER):
+            try:
+                r = json.loads(line)
+                if r.get("at", 0) >= t0:
+                    s += float(r.get("cost") or 0)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return s
+
+
+def set_oxyy_balance(usd):
+    OXYY_BALANCE.parent.mkdir(parents=True, exist_ok=True)
+    OXYY_BALANCE.write_text(json.dumps({"start_usd": float(usd), "at": time.time()}))
+
+
+def _credit_left(provider=None):
+    provider = provider or get_provider()
+    if provider == "oxyy":
+        try:
+            start = float(json.loads(OXYY_BALANCE.read_text()).get("start_usd"))
+        except Exception:
+            return None                    # no endpoint, no starting balance told: honestly unknown
+        return round(max(0.0, start - _oxyy_spent()), 4)
     try:
         sys.path.insert(0, str(Path.home() / "Developer" / "claude-code" / "tools"))
         import api_credit
@@ -140,7 +219,13 @@ def _credit_left():
         return None
 
 
-def _ledger(cost, prompt, error=False):
+def _ledger(cost, prompt, error=False, provider="anthropic"):
+    if provider == "oxyy":
+        OXYY_LEDGER.parent.mkdir(parents=True, exist_ok=True)
+        with open(OXYY_LEDGER, "a") as f:
+            f.write(json.dumps({"at": time.time(), "ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "cost": cost,
+                                "prompt": prompt[:70], "error": error}) + "\n")
+        return
     try:
         sys.path.insert(0, str(Path.home() / "Developer" / "claude-code" / "tools"))
         import api_credit
@@ -198,11 +283,13 @@ class Conv:
         with self.lock:
             if self.running():
                 return True
-            key = _key()
-            if not key:
-                self.error = "no key file (100dolara) in ~/Downloads/API"
-                return False
             r = self.room
+            prov = r.get("provider") if r.get("provider") in PROVIDERS else "anthropic"
+            r["provider"] = prov
+            key = _key(prov)
+            if not key:
+                self.error = "no " + PROVIDERS[prov]["name"] + " key: use the gear to pick its file"
+                return False
             if not os.path.isdir(r.get("cwd") or ""):
                 r["cwd"] = DEFAULT_CWD
             if _session_file(r.get("session")):
@@ -214,6 +301,10 @@ class Conv:
                 self.primer = any(m.get("role") in ("marko", "claude") for m in r.get("messages", []))
             env = {k: v for k, v in os.environ.items() if not (k.startswith("CLAUDECODE") or k.startswith("CLAUDE_CODE_"))}
             env["ANTHROPIC_API_KEY"] = key
+            for v in ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN"):
+                env.pop(v, None)
+            if PROVIDERS[prov]["base_url"]:
+                env["ANTHROPIC_BASE_URL"] = PROVIDERS[prov]["base_url"]    # Oxyy speaks the Messages API at the bare host
             cmd = ["claude", "-p", "--model", r["model"], "--permission-mode", "auto", *sess,
                    "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"]
             (ROOT / "logs").mkdir(parents=True, exist_ok=True)
@@ -236,6 +327,13 @@ class Conv:
 
     def send(self, text):
         with self.lock:
+            want = get_provider()          # v17: the radio decides; a chat on the other provider restarts on this one
+            if self.room.get("provider") != want:
+                if self.running():
+                    self.stop()
+                    self.proc = None
+                self.room["provider"] = want
+                self.stopping = False
             if not self.start():
                 return False
             r = self.room
@@ -324,9 +422,10 @@ class Conv:
                         c = float(d.get("total_cost_usd") or 0)
                         cost = c - self.cum if c >= self.cum else c
                         self.cum = c
-                        cost = round(max(cost, 0.0), 6)
+                        prov = self.room.get("provider", "anthropic")
+                        cost = round(max(cost, 0.0) * PROVIDERS.get(prov, PROVIDERS["anthropic"])["factor"], 6)
                         if cost:
-                            _ledger(cost, self.prompt or "(background)")
+                            _ledger(cost, self.prompt or "(background)", provider=prov)
                             self.room["total"] = round(self.room.get("total", 0.0) + cost, 4)
                             for m in reversed(self.room["messages"]):
                                 if m["role"] == "claude":
@@ -437,8 +536,70 @@ def run_turn(room, text):
         total = c.room.get("total", 0.0)
     if err:
         yield {"error": err}
-    yield {"cost": round(cost, 4), "total": total, "left": _credit_left()}
+    yield {"cost": round(cost, 4), "total": total, "left": _credit_left(), "provider": get_provider()}
     yield {"done": 1}
+
+
+# Haiku 5.5 list price per million tokens (input, output); Oxyy bills 40% of it (60% off).
+HAIKU = "claude-haiku-5-5"
+HAIKU_RATE = (0.10, 0.50)
+
+
+def autoname(room):
+    """AUTOMATIC NAME (v17): one cheap Haiku call on the selected provider reads the chat (last ~8k chars) and answers a
+    2-5 word title. Returns {title, cost, provider} or {error}. The cost is booked like any other prompt."""
+    import urllib.request
+    prov = get_provider()
+    P = PROVIDERS[prov]
+    key = _key(prov)
+    if not key:
+        return {"error": "no " + P["name"] + " key: use the gear to pick its file"}
+    hist = "\n\n".join(("Marko: " if m["role"] == "marko" else "Claude: ") + m["text"]
+                        for m in room.get("messages", []) if m.get("role") in ("marko", "claude"))
+    if not hist.strip():
+        return {"error": "the chat is empty"}
+    prompt = ("Read this chat and answer with ONLY a title of 2 to 5 words that says what it is about. "
+              "No quotes, no full stop.\n\n" + hist[-8000:])
+    url = (P["base_url"] or "https://api.anthropic.com") + "/v1/messages"
+    req = urllib.request.Request(url, method="POST", headers={
+        "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json", "user-agent": "queen/17"},
+        data=json.dumps({"model": HAIKU, "max_tokens": 20, "messages": [{"role": "user", "content": prompt}]}).encode())
+    try:
+        with urllib.request.urlopen(req, timeout=40) as x:
+            j = json.loads(x.read().decode())
+    except Exception as exc:
+        body = ""
+        try:
+            body = exc.read().decode()[:200]            # HTTPError body: the service's message, never the key
+        except Exception:
+            pass
+        return {"error": (f"{P['name']} did not answer: {body or exc}").replace(key, "***")[:300]}
+    text = "".join(b.get("text", "") for b in j.get("content") or [] if b.get("type") == "text")
+    title = re.sub(r"[\"'`*#\n]+", " ", text).strip().rstrip(".")[:60].strip()
+    u = j.get("usage") or {}
+    cost = (u.get("input_tokens", 0) * HAIKU_RATE[0] + u.get("output_tokens", 0) * HAIKU_RATE[1]) / 1e6 * P["factor"]
+    cost = round(cost, 6)
+    if cost:
+        _ledger(cost, "autoname", provider=prov)
+    if not title:
+        return {"error": "Haiku gave no title", "cost": cost}
+    return {"title": title, "cost": cost, "provider": prov, "left": _credit_left(prov)}
+
+
+def _credit_info():
+    cur = get_provider()
+    provs = []
+    for pid, P in PROVIDERS.items():
+        provs.append({"id": pid, "name": P["name"], "has_key": bool(_key(pid)), "left": _credit_left(pid),
+                      "estimate": pid == "oxyy"})
+    left = _credit_left(cur)
+    note = ""
+    if cur == "oxyy" and left is None:
+        note = "Oxyy has no balance endpoint: tell Queen your starting balance (click the credit) and she counts down from it."
+    elif cur == "oxyy":
+        note = "Oxyy has no balance endpoint: the credit is your starting balance minus what Queen booked (estimate)."
+    return {"left": left, "has_key": bool(_key(cur)), "provider": cur, "name": PROVIDERS[cur]["name"],
+            "providers": provs, "note": note}
 
 
 def register(app):
@@ -450,12 +611,28 @@ def register(app):
 
     @app.get("/api/capi/credit")
     def capi_credit():
-        return jsonify({"left": _credit_left(), "has_key": bool(_key())})
+        return jsonify(_credit_info())
+
+    @app.post("/api/capi/provider")
+    def capi_provider():
+        p = body().get("provider")
+        if not set_provider(p):
+            return jsonify({"ok": False, "error": "unknown provider"}), 400
+        return jsonify({"ok": True, **_credit_info()})
+
+    @app.post("/api/capi/oxyy_balance")
+    def capi_oxyy_balance():
+        try:
+            set_oxyy_balance(float(body().get("usd")))
+        except Exception:
+            return jsonify({"ok": False, "error": "a number in dollars"}), 400
+        return jsonify({"ok": True, **_credit_info()})
 
     @app.post("/api/capi/key")
     def capi_key():
         """{path} of a key file -> {ok, last4} or {ok:false, error}. The key itself never travels or prints."""
-        return jsonify(load_key_file(body().get("path", "")))
+        b = body()
+        return jsonify(load_key_file(b.get("path", ""), b.get("provider")))
 
     @app.get("/api/capi/folders")
     def capi_folders():
@@ -472,10 +649,14 @@ def register(app):
             try:
                 r, st = _room(f.stem)
                 rooms.append({"id": r["id"], "title": r.get("title", ""), "count": len(r.get("messages", [])),
-                              "updated": r.get("updated", 0), "model": r.get("model", ""), **st})
+                              "updated": r.get("updated", 0), "created": r.get("created") or r.get("updated", 0),
+                              "provider": r.get("provider", "anthropic"), "model": r.get("model", ""), **st})
             except Exception:
                 pass
-        rooms.sort(key=lambda r: -r["updated"])
+        # v17 bug fix: the list was sorted by "updated", which every answer bumps, so a new chat fell below any chat that
+        # was answering and the order changed on each poll. Now by creation time, newest first, id as the tie-break: a new
+        # chat is always at the top and nothing moves afterwards.
+        rooms.sort(key=lambda r: (-float(r["created"]), r["id"]))
         return jsonify({"rooms": rooms, "conversations": rooms})
 
     @app.get("/api/capi/get")
@@ -534,6 +715,27 @@ def register(app):
             c.start()
         rr, st = _room(c.room["id"])
         return jsonify({"room": rr, **st, "notice": note})
+
+    @app.post("/api/capi/rename")
+    def capi_rename():
+        """{id,title}: the chat's name, kept in its file. The list is ordered by creation, so a rename never moves it."""
+        b = body()
+        title = re.sub(r"\s+", " ", (b.get("title") or "")).strip()[:80]
+        c = _conv(b.get("id", ""))
+        if not c or not title:
+            return jsonify({"ok": False, "error": "no such chat" if not c else "empty name"}), 400
+        with c.lock:
+            c.room["title"] = title
+            c.save()
+        return jsonify({"ok": True, "title": title})
+
+    @app.post("/api/capi/autoname")
+    def capi_autoname():
+        """{id} -> {title, cost}: suggests a name only; the window fills the field and Marko saves it (rename)."""
+        r, _ = _room(body().get("id", ""))
+        if not r:
+            return jsonify({"error": "no such chat"}), 404
+        return jsonify(autoname(r))
 
     @app.post("/api/capi/start")
     def capi_start():

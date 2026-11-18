@@ -231,3 +231,5 @@ Marko: one room with himself, Queen (Groq) and Claude; everyone hears everyone. 
 
 ## 17.11.2026: CAPI tab (v11) + speaker
 One chat module: MessageList + Bubble + MarkdownView + SpeakerButton serve normal chat, TRIPLE and CAPI. CAPI = qwen_app/capi_chat.py running `claude -p` stream-json on the 100dolara key, ledger via claude-code/tools/api_credit.py (ONE credit number). Speaker = qwen_app/speak.py (langsay --out, cached) + Speaker.swift. Trap: Macro Recorder mouse clicks did not reach the window; `macro ax-press Queen <label>` and System Events keystroke worked. Skill queen_skills/capi.md.
+
+- 18.11.2026 (v17): sorting a list by "updated" makes it jump on every answer; a list the user thinks of as "newest first" is sorted by creation time with a stable tie-break. Oxyy: /v1/models lists only what THIS key may call (the website lists 130+); non-Claude models answer only on the OpenAI route (/v1/chat/completions), not /v1/messages; no balance endpoint, so a local ledger from a starting balance. Test with one call (max_tokens 5) and read /v1/models first.
