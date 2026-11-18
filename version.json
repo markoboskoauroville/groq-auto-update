@@ -41,7 +41,7 @@
     {
       "version": 5,
       "timestamp": "2026-11-11T22:12:52+0100",
-      "message": "Add complete Key Tester feature with two-tab sidebar UI (\u26a1 Groq Studio / \ud83d\udd11 Key Tester) and backend routes for masked key inventory + live multi-provider key testing",
+      "message": "Add complete Key Tester feature with two-tab sidebar UI (⚡ Groq Studio / 🔑 Key Tester) and backend routes for masked key inventory + live multi-provider key testing",
       "files": [
         "index.html",
         "app.py"
@@ -167,6 +167,18 @@
       "version": 24,
       "timestamp": "2026-11-18T20:00:00+0100",
       "message": "v24: third provider GOOGLE CLOUD (Gemini API + Claude on Vertex AI, free credit), paperclip / drop / paste file picker with chips, files to Gemini and Claude",
+      "files": [
+        "qwen_app/gcloud_chat.py",
+        "qwen_app/capi_chat.py",
+        "mac_app/app/Capi.swift",
+        "mac_app/app/App.swift",
+        "queen_skills/google-cloud-provider.md"
+      ]
+    },
+    {
+      "version": 24,
+      "timestamp": "2026-11-18T20:00:00+0100",
+      "message": "v24: third provider radio Google Cloud (Gemini API + Claude on Vertex AI, free credit), file picker in the chat box (paperclip, drop, paste, chips; images/PDF/text to Gemini and Claude)",
       "files": [
         "qwen_app/gcloud_chat.py",
         "qwen_app/capi_chat.py",
