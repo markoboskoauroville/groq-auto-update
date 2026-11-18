@@ -297,6 +297,7 @@ class Conv:
         self.turns = 0
         self.stopping = False     # STOP pressed: the end of the process is not an error
         self.pending = None       # the marko message being answered: status sent -> received -> done | failed
+        self.pair_run = None      # v26: the MASTER / SLAVE run of this chat (pair_chat.PairRun) while it works
 
     def save(self):
         with self.lock:
@@ -305,7 +306,8 @@ class Conv:
 
     def running(self):
         g = getattr(self, "gthread", None)
-        return bool((self.proc and self.proc.poll() is None) or (g and g.is_alive()))
+        pr = getattr(self, "pair_run", None)
+        return bool((self.proc and self.proc.poll() is None) or (g and g.is_alive()) or (pr and pr.alive()))
 
     def start(self):
         with self.lock:
@@ -329,12 +331,7 @@ class Conv:
                 r["session"] = str(uuid.uuid4())
                 sess = ["--session-id", r["session"]]
                 self.primer = any(m.get("role") in ("marko", "claude") for m in r.get("messages", []))
-            env = {k: v for k, v in os.environ.items() if not (k.startswith("CLAUDECODE") or k.startswith("CLAUDE_CODE_"))}
-            env["ANTHROPIC_API_KEY"] = key
-            for v in ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN"):
-                env.pop(v, None)
-            if PROVIDERS[prov]["base_url"]:
-                env["ANTHROPIC_BASE_URL"] = PROVIDERS[prov]["base_url"]    # Oxyy speaks the Messages API at the bare host
+            env = _claude_env(prov, key)
             cmd = ["claude", "-p", "--model", r["model"], "--permission-mode", "auto", *sess,
                    "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"]
             (ROOT / "logs").mkdir(parents=True, exist_ok=True)
@@ -355,7 +352,12 @@ class Conv:
             threading.Thread(target=self._read, args=(self.proc,), daemon=True).start()
             return True
 
-    def send(self, text, files=None):
+    def send(self, text, files=None, pair=None):
+        """pair: a dict {master, slave, max_rounds?, cap_usd?} for this one turn (Queen's ask); None = the saved switch."""
+        import pair_chat
+        st = pair_chat.status(_key, PROVIDERS, pair) if pair is not None else pair_chat.status(_key, PROVIDERS)
+        if st["active"]:
+            return self._send_pair(text, files, st)
         with self.lock:
             want = get_provider()          # v17: the radio decides; a chat on the other provider restarts on this one
             if self.room.get("provider") != want:
@@ -418,6 +420,49 @@ class Conv:
                 return False
             return True
 
+    def _send_pair(self, text, files, cfg):
+        """v26: MASTER / SLAVE turn in a thread; every step lands in the chat file as a labelled message."""
+        import pair_chat
+        with self.lock:
+            if self.running() and self.busy:
+                self.error = "still answering"
+                return False
+            if self.proc and self.proc.poll() is None:      # the single-mode Claude process is not needed meanwhile
+                self.stop()
+                self.proc = None
+            self.stopping = False
+            r = self.room
+            if self.pending is not None:
+                self._mark("done")
+            msg = {"role": "marko", "text": text, "status": "sent",
+                   "pair": f'{pair_chat.NAMES[cfg["master"]]} → {pair_chat.NAMES[cfg["slave"]]}'}
+            if files:
+                msg["files"] = [f.get("name", "file") for f in files]
+            r["messages"].append(msg)
+            self.pending = msg
+            if r.get("title") in ("CAPI chat", "", None):
+                r["title"] = text.strip().splitlines()[0][:48] or "CAPI chat"
+            self.force_primer = True            # single mode later: Claude's own session did not see the pair turn
+            self.error = ""
+            self.busy = True
+            self.prompt = text
+            self.save()
+
+            def model_for(p):
+                if p == "gcloud":
+                    import gcloud_chat
+                    g = r.get("gmodel") or ""
+                    if not g or gcloud_chat.is_vertex(g):
+                        g = gcloud_chat.default_gemini(gcloud_chat.gemini_models())
+                    return g
+                return r.get("model") or DEFAULT_MODEL
+            deps = {"key": _key, "providers": PROVIDERS, "ledger": _ledger, "env_for": _claude_env, "model_for": model_for,
+                    "root": ROOT}
+            self.pair_run = pair_chat.PairRun(self, text, files, cfg, deps)
+            self.pair_run.thread = threading.Thread(target=self.pair_run.run, daemon=True)
+            self.pair_run.thread.start()
+            return True
+
     def _send_gcloud(self, text, files):
         """Google Cloud turn (v24): one HTTP call in a thread; the answer lands in the chat file like any other."""
         import gcloud_chat
@@ -428,7 +473,6 @@ class Conv:
         prepared, err = gcloud_chat.prepare_files(files or [])
         hist = [(m["role"], m["text"] + (f' [attached: {", ".join(m["files"])}]' if m.get("files") else ""))
                 for m in r["messages"] if m.get("role") in ("marko", "claude")]
-        models = None
         model = r.get("gmodel") or ""
         if gcloud_chat.is_vertex(model) and not gcloud_chat.VERTEX_ENABLED:
             model = ""                                    # v25: Gemini only
@@ -489,6 +533,11 @@ class Conv:
             self.pending = None
 
     def stop(self):
+        pr = getattr(self, "pair_run", None)
+        paired = bool(pr and pr.alive())
+        if paired:
+            pr.stop()                          # v26: STOP stops both sides of a pair at once (the running one is killed)
+            pr.thread.join(timeout=8)
         with self.lock:
             p = self.proc
             self.stopping = True
@@ -504,9 +553,9 @@ class Conv:
                     os.killpg(p.pid, 9)
                 except Exception:
                     p.kill()
-        return bool(p)
+        return bool(p) or paired
 
-    def _read(self, p):
+    def _read(self, p):  # noqa: C901
         try:
             for line in p.stdout:
                 try:
@@ -581,6 +630,17 @@ class Conv:
 
 
 
+def _claude_env(prov, key):
+    """The environment of a Claude Code run on this provider (session variables removed, the key set, Oxyy's base URL)."""
+    env = {k: v for k, v in os.environ.items() if not (k.startswith("CLAUDECODE") or k.startswith("CLAUDE_CODE_"))}
+    env["ANTHROPIC_API_KEY"] = key
+    for v in ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN"):
+        env.pop(v, None)
+    if PROVIDERS[prov]["base_url"]:
+        env["ANTHROPIC_BASE_URL"] = PROVIDERS[prov]["base_url"]    # Oxyy speaks the Messages API at the bare host
+    return env
+
+
 _convs: dict[str, Conv] = {}
 
 
@@ -614,7 +674,7 @@ def _stop_all():
 atexit.register(_stop_all)
 
 
-def run_turn(room, text, files=None):
+def run_turn(room, text, files=None, pair=None):
     """Streaming form of one turn (the old /api/capi/turn): send, then yield what lands until the answer is done."""
     c = _conv(room["id"])
     if not c:
@@ -622,7 +682,7 @@ def run_turn(room, text, files=None):
         return
     with c.lock:
         n = len(c.room["messages"]) + 1
-        if not c.send(text, files):
+        if not c.send(text, files, pair):
             yield {"error": c.error or "could not send"}
             return
     while True:
@@ -632,7 +692,16 @@ def run_turn(room, text, files=None):
             n += len(new)
             busy = c.busy
         for m in new:
-            yield {"text": m["text"]} if m["role"] == "claude" else {"tool": m["text"]}
+            if m["role"] in ("master", "slave"):      # v26: a pair message, labelled with speaker and role
+                yield {"text": m["text"], "role": m["role"], "speaker": m.get("speaker"), "kind": m.get("kind"),
+                       "label": m.get("label", ""), "model": m.get("model", ""), "cost": m.get("cost", 0.0),
+                       **({"verdict": m["verdict"]} if m.get("verdict") else {})}
+            elif m["role"] == "pair":
+                yield {"pair": m["text"], "end": m.get("end", ""), "pair_cost": m.get("cost", 0.0)}
+            elif m["role"] == "claude":
+                yield {"text": m["text"]}
+            else:
+                yield {"tool": m["text"]}
         if not busy:
             break
     with c.lock:
@@ -640,7 +709,7 @@ def run_turn(room, text, files=None):
         for m in reversed(c.room["messages"]):
             if m["role"] == "marko":
                 break
-            if m["role"] == "claude":
+            if m["role"] in ("claude", "pair"):
                 cost = m.get("cost", 0.0)
                 break
         err = c.error
@@ -782,6 +851,21 @@ def register(app):
         except Exception:
             return jsonify({"ok": False, "error": "a number in dollars"}), 400
         return jsonify({"ok": True, **_credit_info()})
+
+    @app.get("/api/capi/pair")
+    def capi_pair_get():
+        import pair_chat
+        st = pair_chat.status(_key, PROVIDERS)
+        st["models"] = {"master_hint": "the chat's MODEL (Claude) or Gemini model", "slave": [
+            {"id": m, "tier": t, "in": i, "out": o} for m, t, i, o in pair_chat.slave_catalog(st["slave"])]} if st["active"] else {}
+        return jsonify(st)
+
+    @app.post("/api/capi/pair")
+    def capi_pair_set():
+        """{master?, slave?, max_rounds?, cap_usd?} ("" = off). -> the status (active, note, label)."""
+        import pair_chat
+        pair_chat.set_pair(body(), PROVIDERS)
+        return jsonify({"ok": True, **pair_chat.status(_key, PROVIDERS)})
 
     @app.post("/api/capi/queen")
     def capi_queen():
@@ -947,15 +1031,33 @@ def register(app):
         if not text:
             return jsonify({"error": "empty"}), 400
         r = _load(b.get("id", "")) or _new(b.get("cwd"), b.get("model") or "claude-haiku-5-5", queen="on")   # made by her: hers
+        if b.get("gmodel") and not r.get("gmodel"):
+            c0 = _conv(r["id"])
+            with c0.lock:
+                c0.room["gmodel"] = str(b["gmodel"])[:80]
+                c0.save()
+            r = c0.room
+        pair = None
+        if b.get("master") or b.get("slave"):        # v26: a pair turn for this one ask (the saved switch is not changed)
+            import pair_chat
+            pair = {k: b.get(k) for k in ("master", "slave", "max_rounds", "cap_usd") if b.get(k) is not None}
+            pair = {**pair_chat.get_pair(), **pair}
+            st = pair_chat.status(_key, PROVIDERS, pair)
+            if not st["active"]:
+                return jsonify({"error": st["note"], "answer": "", "id": r["id"]}), 400
         if not _queen_on(r):
             return jsonify({"error": "This chat has QUEEN: OFF, so Queen may not use it. Marko switches it on in the chat's header.",
                             "answer": "", "id": r["id"]}), 403
-        out, cost, err = [], 0.0, None
-        for e in run_turn(r, text):
+        out, cost, err, end = [], 0.0, None, ""
+        for e in run_turn(r, text, None, pair):
             if "text" in e:
-                out.append(e["text"])
+                out.append((f'[{e["label"]}]\n' if e.get("label") else "") + e["text"])
+            if "pair" in e:
+                out.append(e["pair"])
+                end = e.get("end", "")
             if "cost" in e:
                 cost = e["cost"]
             if "error" in e:
                 err = e["error"]
-        return jsonify({"answer": "\n\n".join(out), "cost": cost, "id": r["id"], "left": _credit_left(), "error": err})
+        return jsonify({"answer": "\n\n".join(out), "cost": cost, "id": r["id"], "left": _credit_left(), "error": err,
+                        **({"pair_end": end} if pair else {})})

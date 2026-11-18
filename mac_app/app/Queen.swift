@@ -10,6 +10,7 @@ struct Msg: Identifiable, Equatable {
     var cost: Double = 0          // CAPI: what this answer cost
     var status: String = ""       // CAPI prompts (v13): sent | received | done | failed
     var reason: String = ""       // why it failed (tooltip)
+    var label: String = ""        // v26 pair: "ANTHROPIC · MASTER → GOOGLE CLOUD · SLAVE (PLAN · slave gemini-…: reason)"
 }
 
 struct ChatMeta: Identifiable, Equatable {

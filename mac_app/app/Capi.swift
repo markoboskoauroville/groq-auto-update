@@ -64,6 +64,13 @@ final class Capi: ObservableObject {
     @Published var gDefault = ""
     @Published var queenOn = false               // v25: this chat's switch; off = Queen bypassed, not trained (the default)
     @Published var creditExpiry = ""             // v25: Google Cloud free credit expiry, e.g. 2.12.2026
+    // v26: MASTER / SLAVE pair (server: /api/capi/pair). Marko: "next to each provider ... a switch master or slave".
+    @Published var pairMaster = ""
+    @Published var pairSlave = ""
+    @Published var pairActive = false
+    @Published var pairNote = ""
+    @Published var pairRounds = 5
+    @Published var pairCap = 0.50
     static let maxFile = 20 * 1024 * 1024
     @Published var creditNote = ""
     private var poller: Task<Void, Never>?
@@ -126,6 +133,65 @@ final class Capi: ObservableObject {
     @MainActor
     func loadCredit() async {
         if let j = await Queen.shared.json("/api/capi/credit") { applyCredit(j) }
+        await loadPair()
+    }
+
+    // ---------------- v26: the pair
+    @MainActor
+    func loadPair() async {
+        if let j = await Queen.shared.json("/api/capi/pair") { applyPair(j) }
+    }
+
+    @MainActor
+    private func applyPair(_ j: [String: Any]) {
+        pairMaster = (j["master"] as? String) ?? ""
+        pairSlave = (j["slave"] as? String) ?? ""
+        pairActive = (j["active"] as? Bool) ?? false
+        pairNote = (j["note"] as? String) ?? ""
+        pairRounds = (j["max_rounds"] as? Int) ?? pairRounds
+        pairCap = (j["cap_usd"] as? Double) ?? pairCap
+    }
+
+    func role(of id: String) -> String { pairMaster == id ? "MASTER" : (pairSlave == id ? "SLAVE" : "OFF") }
+
+    static func upperName(_ id: String) -> String { id == "gcloud" ? "GOOGLE CLOUD" : id.uppercased() }
+
+    var pairText: String { Capi.upperName(pairMaster) + " → " + Capi.upperName(pairSlave) }
+
+    /// The switch beside a radio: OFF → MASTER → SLAVE → OFF. The server keeps one master and one slave.
+    @MainActor
+    func cycleRole(_ id: String) {
+        let next: [String: Any]
+        switch role(of: id) {
+        case "OFF": next = ["master": id]
+        case "MASTER": next = ["master": "", "slave": id]
+        default: next = ["slave": ""]
+        }
+        Task { @MainActor in
+            if let j = await Queen.shared.json("/api/capi/pair", body: next) { self.applyPair(j) }
+        }
+    }
+
+    @MainActor
+    func cycleRounds() {
+        let n = pairRounds >= 10 ? 1 : pairRounds + 1
+        pairRounds = n
+        Task { @MainActor in if let j = await Queen.shared.json("/api/capi/pair", body: ["max_rounds": n]) { self.applyPair(j) } }
+    }
+
+    @MainActor
+    func askCap() {
+        let a = NSAlert()
+        a.messageText = "Cost cap of one pair turn, in dollars"
+        a.informativeText = "Master and slave together stop when this much is spent on one prompt. Now $" + String(format: "%.2f", pairCap) + "."
+        let f = NSTextField(frame: NSRect(x: 0, y: 0, width: 160, height: 24))
+        f.stringValue = String(format: "%.2f", pairCap)
+        a.accessoryView = f
+        a.addButton(withTitle: "Set")
+        a.addButton(withTitle: "Cancel")
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        guard let v = Double(f.stringValue.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)) else { return }
+        Task { @MainActor in if let j = await Queen.shared.json("/api/capi/pair", body: ["cap_usd": v]) { self.applyPair(j) } }
     }
 
     @MainActor
@@ -214,7 +280,8 @@ final class Capi: ObservableObject {
                 guard let r = m["role"] as? String else { return nil }
                 let att = (m["files"] as? [String]) ?? []
                 return Msg(role: r, content: ((m["text"] as? String) ?? "") + (att.isEmpty ? "" : "\n\n[attached: " + att.joined(separator: ", ") + "]"), cost: (m["cost"] as? Double) ?? 0,
-                           status: (m["status"] as? String) ?? "", reason: (m["reason"] as? String) ?? "")
+                           status: (m["status"] as? String) ?? "", reason: (m["reason"] as? String) ?? "",
+                           label: (m["label"] as? String) ?? "")
             }
         }
     }
@@ -423,11 +490,36 @@ struct CapiHeader: View {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("PROVIDER").foregroundStyle(Ink.dim).unit().padding(.horizontal, 6)
                 ForEach(c.providers) { p in
-                    Word(text: (c.provider == p.id ? "◉ " : "○ ") + p.name.uppercased(), id: "capi-provider-" + p.id,
-                         color: c.provider == p.id ? Ink.accent : Ink.text,
-                         help: "Use \(p.name) for the next prompts") { c.setProvider(p.id) }
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {   // v26: radio + its MASTER / SLAVE switch, one unit
+                        Word(text: (c.provider == p.id ? "◉ " : "○ ") + p.name.uppercased(), id: "capi-provider-" + p.id,
+                             color: c.provider == p.id ? Ink.accent : Ink.text,
+                             help: "Use \(p.name) for the next prompts") { c.setProvider(p.id) }
+                        RoleSwitch(id: p.id, name: p.name)
+                    }.unit()
                 }
             }.unit().padding(.vertical, 2)
+            if c.pairActive {
+                // v26: the active pair, e.g. PAIR | ANTHROPIC → GOOGLE CLOUD, then its rounds and its cost cap
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("PAIR").foregroundStyle(Ink.amber).unit()
+                    Text("|").foregroundStyle(Ink.dim).unit()
+                    Text(c.pairText.replacingOccurrences(of: " ", with: "\u{00A0}")).foregroundStyle(Ink.amber).unit()
+                }
+                .padding(.horizontal, 6)
+                .accessibilityElement(children: .combine).accessibilityIdentifier("capi-pair")
+                .help(c.pairNote)
+                .pipeGroup().padding(.vertical, 2)
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    Word(text: "ROUNDS\u{00A0}\(c.pairRounds)", id: "capi-pair-rounds", color: Ink.text,
+                         help: "Most rounds (slave report + master review) in one pair turn; click for one more (1 to 10)") { c.cycleRounds() }
+                    Word(text: String(format: "CAP\u{00A0}$%.2f", c.pairCap), id: "capi-pair-cap", color: Ink.text,
+                         help: "Cost cap of one pair turn (master and slave together); click to change") { c.askCap() }
+                }.pipeGroup().padding(.vertical, 2)
+            } else if !c.pairMaster.isEmpty || !c.pairSlave.isEmpty {
+                Text("PAIR\u{00A0}|\u{00A0}SINGLE").foregroundStyle(Ink.dim).unit().padding(.horizontal, 6)
+                    .help(c.pairNote).accessibilityIdentifier("capi-pair")
+                    .pipeGroup().padding(.vertical, 2)
+            }
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(c.creditText.replacingOccurrences(of: " ", with: "\u{00A0}")).foregroundStyle(Ink.red).unit()
                     .padding(.leading, 6)
@@ -480,6 +572,28 @@ struct CapiHeader: View {
         .font(.system(size: 12, weight: .bold, design: .monospaced))
         .padding(.horizontal, 8).padding(.vertical, 2)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// v26: the small MASTER / SLAVE switch beside a provider radio. Click: OFF → MASTER → SLAVE → OFF.
+struct RoleSwitch: View {
+    @ObservedObject var c = Capi.shared
+    let id: String
+    let name: String
+    var body: some View {
+        let r = c.role(of: id)
+        let col = r == "MASTER" ? Ink.amber : (r == "SLAVE" ? Ink.green : Ink.grey)
+        Text(r)
+            .font(.system(size: 10, weight: .bold, design: .monospaced))
+            .foregroundStyle(col).unit()
+            .padding(.horizontal, 4).padding(.vertical, 1)
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(col.opacity(0.8), lineWidth: 1))
+            .padding(.trailing, 6)
+            .contentShape(Rectangle())
+            .onTapGesture { c.cycleRole(id) }
+            .axButton(name + " pair role", id: "capi-role-" + id, value: r) { c.cycleRole(id) }
+            .pressHover()
+            .help("\(name) in a pair: \(r). Click: OFF → MASTER → SLAVE → OFF. A master plans and reviews, the slave does the work and reports; with no master or no slave the chosen provider works alone.")
     }
 }
 
@@ -650,7 +764,8 @@ struct CapiInput: View {
             ZStack(alignment: .topLeading) {
                 PromptEditor(text: $text, onSend: { go() }, focusTick: tick)
                 if text.isEmpty {
-                    Text(c.provider == "gcloud" ? "Write to Google Cloud (free credit); attach files with the paperclip" : "Write to Claude Code (API credit)").font(.system(size: 14)).foregroundStyle(Ink.dim)
+                    Text(c.pairActive ? "Write to the master (\(Capi.upperName(c.pairMaster).capitalized)); it plans, the slave (\(Capi.upperName(c.pairSlave).capitalized)) works and reports"
+                         : (c.provider == "gcloud" ? "Write to Google Cloud (free credit); attach files with the paperclip" : "Write to Claude Code (API credit)")).font(.system(size: 14)).foregroundStyle(Ink.dim)
                         .padding(.horizontal, 8).padding(.vertical, 6).allowsHitTesting(false)
                 }
             }
@@ -691,8 +806,9 @@ struct CapiInput: View {
                     .axButton("Attach files", id: "capi-attach") { c.pickFiles() }
                     .pressHover()
                     .help("Attach images, PDFs, text or code (up to 20 MB each); you can also drop or paste them here")
-                Text("MODEL").foregroundStyle(Ink.dim).unit().padding(.horizontal, 6)
-                if c.provider == "gcloud" {
+                Text(c.pairActive ? "MASTER\u{00A0}MODEL" : "MODEL").foregroundStyle(Ink.dim).unit().padding(.horizontal, 6)
+                    .help(c.pairActive ? "The master's model; the master chooses the slave's model itself, round by round" : "")
+                if (c.pairActive ? c.pairMaster : c.provider) == "gcloud" {
                     Menu {
                         Section("Gemini") { ForEach(c.gGemini, id: \.self) { m in Button(m) { c.setGModel(m) } } }
                     } label: {

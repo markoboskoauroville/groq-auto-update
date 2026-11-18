@@ -1,6 +1,6 @@
 {
-  "version": 25,
-  "updated_at": "2026-11-18T16:30:00+0100",
+  "version": 26,
+  "updated_at": "2026-11-18T22:30:00+0100",
   "log": [
     {
       "version": 1,
@@ -41,7 +41,7 @@
     {
       "version": 5,
       "timestamp": "2026-11-11T22:12:52+0100",
-      "message": "Add complete Key Tester feature with two-tab sidebar UI (\u26a1 Groq Studio / \ud83d\udd11 Key Tester) and backend routes for masked key inventory + live multi-provider key testing",
+      "message": "Add complete Key Tester feature with two-tab sidebar UI (⚡ Groq Studio / 🔑 Key Tester) and backend routes for masked key inventory + live multi-provider key testing",
       "files": [
         "index.html",
         "app.py"
@@ -185,6 +185,22 @@
         "qwen_app/training_log.py",
         "mac_app/app/Capi.swift",
         "mac_app/app/App.swift"
+      ]
+    },
+    {
+      "version": 26,
+      "timestamp": "2026-11-18T22:30:00+0100",
+      "message": "v26: MASTER / SLAVE pair of CAPI providers (switch beside each radio, PAIR header, /api/capi/pair), master plans / reviews with VERDICT and chooses the slave's model per round, slave executes and reports, Gemini slave gets hands (function-calling tool loop confined to the chat's folder), rounds + cost cap + STOP for both sides",
+      "files": [
+        "qwen_app/pair_chat.py",
+        "qwen_app/gemini_hands.py",
+        "qwen_app/capi_chat.py",
+        "qwen_app/app.py",
+        "qwen_app/test_pair_chat.py",
+        "mac_app/app/Capi.swift",
+        "mac_app/app/App.swift",
+        "mac_app/app/Queen.swift",
+        "queen_skills/master-slave.md"
       ]
     }
   ]

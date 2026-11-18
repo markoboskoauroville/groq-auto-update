@@ -256,3 +256,11 @@ One chat module: MessageList + Bubble + MarkdownView + SpeakerButton serve norma
 ## v25 (18.11.2026)
 - pgrep -f on this Mac did not find the Queen backend although it ran (lsof -iTCP:8766 finds it): kill by the pid from lsof, the Swift app restarts it within 20 s.
 - A brief's "about 16:30" can be later than the Mac clock (16:14): anchor a credit base to a time that has passed, and say so.
+
+## v26 (18.11.2026): MASTER / SLAVE
+- A Claude Code run started by Queen still reads Marko's global CLAUDE.md and its hooks: a slave ran `langsay` (spoke aloud) and its final `result` was a note about that speech job, not the REPORT. In a pair: tell it it is headless (no voice, no other sessions, last message = the full answer), block `Bash(langsay:*)`, and never trust `result` blindly: pick the text that carries REPORT / VERDICT / SLAVE_MODEL (pair_chat.pick_answer).
+- The review loop catches a bad report by itself: the Gemini master answered VERDICT: FIX to the side note and round 2 was right. Keep the verdict machine-read (last `VERDICT: DONE|FIX` line wins, markdown around it ignored; none = FIX, flagged).
+- `claude --tools` and `--disallowedTools` are variadic: give the prompt on stdin, never as the last argument after them.
+- Gemini function calling: send the model's parts back verbatim (thought signatures), answer every functionCall in ONE user turn of functionResponse parts (with the call's id when there is one).
+- STOP of a Claude run has no result event, so its partial cost is unknown: say so, it is booked $0.
+- Model choice by the master: give it the list with tier and price, parse `SLAVE_MODEL:` leniently (a near name maps to the listed id), an unknown id falls back to the cheapest with a visible note; check a step up against what is left of the cap before the round.

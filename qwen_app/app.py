@@ -1087,7 +1087,12 @@ def _local_command_answer(last_user_text: str):
         # 14.11.2026, VM only: "open whatsapp" / "whatsapp: <request>" -> the WhatsApp machine (the VM's Firefox)
         # 14.11.2026, Mac: "check my last 5 WhatsApp messages" -> read through Accessibility (whatsapp_ax), never a screenshot
         local_answer = None
-        if sys.platform == "darwin":
+        try:
+            from pair_chat import chat_pair_command   # v26 18.11.2026: "pair status" / "pair master X slave Y" / "pair off", $0
+            local_answer = chat_pair_command(last_user_text)
+        except Exception as _pair_exc:
+            print(f"[pair_chat] {_pair_exc}")
+        if not local_answer and sys.platform == "darwin":
             from system_volume import chat_volume_command   # 14.11.2026: Mac output volume, $0, before anything else
             local_answer = chat_volume_command(last_user_text)
             if not local_answer:

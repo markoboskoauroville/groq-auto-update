@@ -8,7 +8,7 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 
-let VERSION = 25
+let VERSION = 26
 let APP_NAME = "Queen"
 
 enum Ink {
@@ -253,8 +253,19 @@ struct Bubble: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16).padding(.vertical, 2)
         } else {
+            if m.role == "pair" {
+                // v26: the end of a MASTER / SLAVE turn: one line with how it ended and the costs
+                Text(m.content)
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundStyle(m.content.hasPrefix("PAIR DONE") ? Ink.green : Ink.amber)
+                    .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16).padding(.vertical, 8)
+                    .accessibilityIdentifier("capi-pair-end")
+            } else {
             VStack(alignment: .leading, spacing: 4) {
-                Text(Bubble.label(m.role))
+                Text(m.label.isEmpty ? Bubble.label(m.role) : m.label)
+                    .fixedSize(horizontal: false, vertical: true)
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundStyle(Bubble.color(m.role))
                 if m.content.isEmpty {
@@ -279,13 +290,16 @@ struct Bubble: View {
                 if Bubble.isMine(m.role) && !m.status.isEmpty { PromptStatus(m: m).padding(.trailing, 12).padding(.bottom, 4) }
             }
             .background(Bubble.isMine(m.role) ? Ink.panel : Color.clear)
+            }
         }
     }
 
     // the roles of the one-to-one chat (user / assistant) and the speakers of the triple chat (marko / queen / claude)
     static func isMine(_ r: String) -> Bool { r == "user" || r == "marko" }
-    static func label(_ r: String) -> String { isMine(r) ? "YOU" : (r == "claude" ? "CLAUDE" : "QUEEN") }
-    static func color(_ r: String) -> Color { isMine(r) ? Ink.dim : (r == "claude" ? Ink.claude : Ink.accent) }
+    static func label(_ r: String) -> String { isMine(r) ? "YOU" : (r == "claude" ? "CLAUDE" : (r == "master" ? "MASTER" : (r == "slave" ? "SLAVE" : "QUEEN"))) }
+    static func color(_ r: String) -> Color {
+        isMine(r) ? Ink.dim : (r == "claude" ? Ink.claude : (r == "master" ? Ink.amber : (r == "slave" ? Ink.green : Ink.accent)))
+    }
 
     static func rich(_ s: String) -> AttributedString {
         let opts = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
