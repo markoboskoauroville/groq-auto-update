@@ -1,6 +1,6 @@
 {
-  "version": 17,
-  "updated_at": "2026-11-18T12:00:00+0100",
+  "version": 18,
+  "updated_at": "2026-11-18T14:00:00+0100",
   "log": [
     {
       "version": 1,
@@ -103,6 +103,16 @@
         "qwen_app/capi_chat.py",
         "mac_app/app/Capi.swift",
         "queen_skills/capi.md"
+      ]
+    },
+    {
+      "version": 18,
+      "timestamp": "2026-11-18T14:00:00+0100",
+      "message": "v18: no broken words (unbreakable units, FlowLayout), chat row buttons START / STOP RENAME CLOSE, draggable remembered divider",
+      "files": [
+        "mac_app/app/Flow.swift",
+        "mac_app/app/Capi.swift",
+        "mac_app/app/App.swift"
       ]
     }
   ]

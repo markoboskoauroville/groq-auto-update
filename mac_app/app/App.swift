@@ -8,7 +8,7 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 
-let VERSION = 17
+let VERSION = 18
 let APP_NAME = "Queen"
 
 enum Ink {
@@ -63,7 +63,7 @@ struct Word: View {
     var help: String = ""
     let action: () -> Void
     var body: some View {
-        Text(text).foregroundStyle(color)
+        Text(text).foregroundStyle(color).unit()
             .padding(.horizontal, 6).padding(.vertical, 4)
             .contentShape(Rectangle())
             .onTapGesture { action() }
@@ -112,7 +112,7 @@ struct TopRow: View {
                 .lineLimit(1)
             HStack(spacing: 6) {
                 Spacer().frame(width: 64)                   // the traffic lights
-                Text("ON").foregroundStyle(Ink.green).padding(.horizontal, 6)
+                Text("ON").foregroundStyle(Ink.green).unit().padding(.horizontal, 6)
                 Word(text: "OFF", id: "off", color: Ink.grey, help: "Quit Queen: her server on 8765 and her backend on 8766 stop") {
                     Queen.shared.stopIfOurs()
                     DispatchQueue.main.async { NSApp.terminate(nil) }
@@ -158,7 +158,7 @@ struct StatusLine: View {
             Circle().fill(q.up ? Ink.green : (q.starting ? Ink.amber : Ink.red)).frame(width: 8, height: 8)
             // the one version number: the app's own (release tag vN); a click opens the Latest release (version-visible.md)
             Text("v\(VERSION)")
-                .font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundStyle(Ink.accent)
+                .font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundStyle(Ink.accent).unit()
                 .padding(.horizontal, 4).contentShape(Rectangle())
                 .onTapGesture { StatusLine.openLatest() }
                 .accessibilityElement(children: .ignore).accessibilityLabel("version")
@@ -403,6 +403,7 @@ struct Root: View {
     @State private var showCapiRooms = false
     @ObservedObject var tr = Triple.shared
     @ObservedObject var cp = Capi.shared
+    @AppStorage("ui.capiListWidth") private var capiListW: Double = 330     // v18: the divider's width, remembered
     var body: some View {
         VStack(spacing: 0) {
             TopRow()
@@ -413,10 +414,10 @@ struct Root: View {
             HStack(spacing: 0) {
                 if cp.active {
                     if showCapiRooms {
-                        CapiRoomList().frame(width: 330)
-                        Rectangle().fill(Ink.line).frame(width: 1)
+                        CapiRoomList().frame(width: capiListW)
+                        SplitHandle(width: $capiListW, minW: 230, maxW: 520, reset: 330)
                     }
-                    CapiConversation()
+                    CapiConversation().frame(minWidth: 300)
                 } else if tr.active {
                     if showRooms {
                         RoomList().frame(width: 240)

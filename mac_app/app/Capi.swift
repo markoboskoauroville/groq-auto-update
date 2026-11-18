@@ -338,62 +338,57 @@ struct CapiHeader: View {
     @ObservedObject var c = Capi.shared
     @Binding var showRooms: Bool
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 4) {                          // v17: one radio per API provider
-                Text("PROVIDER").foregroundStyle(Ink.dim).padding(.horizontal, 6)
-                ForEach(c.providers) { p in
-                    Word(text: (c.provider == p.id ? "◉ " : "○ ") + p.name.uppercased(), id: "capi-provider-" + p.id,
-                         color: c.provider == p.id ? Ink.accent : Ink.text,
-                         help: "Use \(p.name) for the next prompts") { c.setProvider(p.id) }
-                }
-                Spacer(minLength: 0)
+        // v18: every piece is an unbreakable unit; whole units wrap to the next row when the window is narrow.
+        FlowLayout(spacing: 4, rowSpacing: 0) {
+            Text("PROVIDER").foregroundStyle(Ink.dim).unit().padding(.horizontal, 6).padding(.vertical, 4)
+            ForEach(c.providers) { p in
+                Word(text: (c.provider == p.id ? "◉ " : "○ ") + p.name.uppercased(), id: "capi-provider-" + p.id,
+                     color: c.provider == p.id ? Ink.accent : Ink.text,
+                     help: "Use \(p.name) for the next prompts") { c.setProvider(p.id) }
             }
-            HStack(spacing: 4) {
-                Text(c.creditText.replacingOccurrences(of: " ", with: "\u{00A0}")).foregroundStyle(Ink.red).padding(.horizontal, 6)
-                    .accessibilityIdentifier("capi-credit")
-                    .onTapGesture { if c.provider == "oxyy" { c.askStartBalance() } }
-                    .help(c.creditNote.isEmpty ? "Credit left for the chosen provider" : c.creditNote)
-                Image(systemName: "gearshape")                 // v13: the API key file (file picker, key read by shape)
-                    .font(.system(size: 13, weight: .regular)).foregroundStyle(Ink.text)
-                    .padding(.horizontal, 4).padding(.vertical, 4)
-                    .contentShape(Rectangle())
-                    .onTapGesture { c.pickKeyFile() }
-                    .axButton("API key file", id: "capi-key-gear") { c.pickKeyFile() }
-                    .pressHover()
-                    .help("Choose the file with the API key of the chosen provider; other text around it is fine")
-                Text(String(format: "this chat $%.4f", c.total).replacingOccurrences(of: " ", with: "\u{00A0}"))
-                    .foregroundStyle(Ink.dim)
-                if !c.keyNote.isEmpty {
-                    Text(c.keyNote).foregroundStyle(c.keyNote.hasPrefix("API key loaded") ? Ink.green : Ink.red)
-                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("capi-key-note")
-                }
-                Spacer(minLength: 4)
-                Word(text: "CHATS", id: "capi-conversations", color: showRooms ? Ink.accent : Ink.text,
-                     help: "Your CAPI chats: switch, start, stop, close") {
-                    showRooms.toggle()
-                    if showRooms { Task { await c.loadConvs() } }
-                }
-                Word(text: "NEW CHAT", id: "capi-new-conversation",
-                     help: "A clean chat: its own Claude Code process") { Task { await c.newConversation() } }
-            }
-            HStack(spacing: 4) {
-                Text("FOLDER").foregroundStyle(Ink.dim).padding(.horizontal, 6)
-                Menu {
-                    ForEach(c.folders) { f in Button(f.name) { c.setFolder(f.path) } }
-                } label: {
-                    Text(c.folderName.isEmpty ? "…" : c.folderName).foregroundStyle(Ink.accent)
-                }
-                .menuStyle(.borderlessButton).fixedSize()
+            Text(c.creditText.replacingOccurrences(of: " ", with: "\u{00A0}")).foregroundStyle(Ink.red).unit()
                 .padding(.horizontal, 6).padding(.vertical, 4)
+                .accessibilityIdentifier("capi-credit")
+                .onTapGesture { if c.provider == "oxyy" { c.askStartBalance() } }
+                .help(c.creditNote.isEmpty ? "Credit left for the chosen provider" : c.creditNote)
+            Image(systemName: "gearshape")                 // v13: the API key file (file picker, key read by shape)
+                .font(.system(size: 13, weight: .regular)).foregroundStyle(Ink.text)
+                .padding(.horizontal, 4).padding(.vertical, 4)
+                .contentShape(Rectangle())
+                .onTapGesture { c.pickKeyFile() }
+                .axButton("API key file", id: "capi-key-gear") { c.pickKeyFile() }
                 .pressHover()
-                .accessibilityIdentifier("capi-folder")
-                .help("The folder Claude Code works in")
-                Spacer(minLength: 0)
+                .help("Choose the file with the API key of the chosen provider; other text around it is fine")
+            Text(String(format: "this chat $%.4f", c.total).replacingOccurrences(of: " ", with: "\u{00A0}"))
+                .foregroundStyle(Ink.dim).unit().padding(.vertical, 4)
+            if !c.keyNote.isEmpty {
+                Text(c.keyNote.replacingOccurrences(of: " ", with: "\u{00A0}"))
+                    .foregroundStyle(c.keyNote.hasPrefix("API key loaded") ? Ink.green : Ink.red).unit()
+                    .padding(.vertical, 4)
+                    .accessibilityIdentifier("capi-key-note")
             }
+            Word(text: "CHATS", id: "capi-conversations", color: showRooms ? Ink.accent : Ink.text,
+                 help: "Your CAPI chats: switch, start, stop, close") {
+                showRooms.toggle()
+                if showRooms { Task { await c.loadConvs() } }
+            }
+            Word(text: "NEW CHAT", id: "capi-new-conversation",
+                 help: "A clean chat: its own Claude Code process") { Task { await c.newConversation() } }
+            Text("FOLDER").foregroundStyle(Ink.dim).unit().padding(.horizontal, 6).padding(.vertical, 4)
+            Menu {
+                ForEach(c.folders) { f in Button(f.name) { c.setFolder(f.path) } }
+            } label: {
+                Text(c.folderName.isEmpty ? "…" : c.folderName).foregroundStyle(Ink.accent).unit()
+            }
+            .menuStyle(.borderlessButton).fixedSize()
+            .padding(.horizontal, 6).padding(.vertical, 4)
+            .pressHover()
+            .accessibilityIdentifier("capi-folder")
+            .help("The folder Claude Code works in")
         }
         .font(.system(size: 12, weight: .bold, design: .monospaced))
         .padding(.horizontal, 8).padding(.vertical, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -423,12 +418,11 @@ struct CapiInput: View {
                 .background(RoundedRectangle(cornerRadius: 6).fill(Ink.panel))
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(Ink.line, lineWidth: 1))
                 .accessibilityIdentifier("capi-prompt")
-            HStack(spacing: 4) {
-                Text("MODEL").foregroundStyle(Ink.dim).padding(.horizontal, 6)
+            FlowLayout(spacing: 4, rowSpacing: 0) {
+                Text("MODEL").foregroundStyle(Ink.dim).unit().padding(.horizontal, 6)
                 ForEach(Triple.models, id: \.self) { m in
                     Word(text: Triple.short(m), id: "capi-model-" + m, color: c.model == m ? Ink.claude : Ink.grey, help: m) { c.setModel(m) }
                 }
-                Spacer(minLength: 4)
                 if c.busy {
                     Word(text: "STOP", id: "capi-stop", color: Ink.amber, help: "Stop this chat's process (the history stays)") { c.stop() }
                 } else {
@@ -462,28 +456,33 @@ struct CapiRoomList: View {
                     HStack(alignment: .top, spacing: 0) {
                         Rectangle().fill(r.running ? Ink.green : Color.clear).frame(width: 4)
                             .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(r.title).font(.system(size: 13, weight: r.id == c.convId ? .bold : .regular))
-                                .foregroundStyle(r.id == c.convId ? Ink.claude : Ink.text)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Text(CapiRoomList.status(r)).font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(r.busy ? Ink.green : (r.error.isEmpty || r.error == "stopped" ? Ink.dim : Ink.red))
+                        VStack(alignment: .leading, spacing: 4) {
+                            VStack(alignment: .leading, spacing: 2) {      // the title on its own line (wraps between words only)
+                                Text(r.title).font(.system(size: 13, weight: r.id == c.convId ? .bold : .regular))
+                                    .foregroundStyle(r.id == c.convId ? Ink.claude : Ink.text)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Text(CapiRoomList.status(r)).font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(r.busy ? Ink.green : (r.error.isEmpty || r.error == "stopped" ? Ink.dim : Ink.red))
+                                    .unit()
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .onTapGesture { Task { await c.open(r.id) } }
+                            .axButton("Chat " + r.title, id: "capi-conv-" + r.id,
+                                      value: r.running ? (r.busy ? "answering" : "running") : "stopped") { Task { await c.open(r.id) } }
+                            .pressHover()
+                            // v18: START on the first row, then STOP RENAME CLOSE; whole buttons wrap, never letters
+                            VStack(alignment: .leading, spacing: 0) {
+                                act("START", "Start", r, on: !r.running, color: Ink.green) { c.startConv(r.id) }
+                                FlowLayout(spacing: 0, rowSpacing: 0) {
+                                    act("STOP", "Stop", r, on: r.running, color: Ink.amber) { c.stopConv(r.id) }
+                                    act("RENAME", "Rename", r, on: true, color: Ink.accent) { renaming = r }
+                                    act("CLOSE", "Close", r, on: true, color: Ink.red) { c.closeConv(r) }
+                                }
+                            }
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.leading, 8).padding(.vertical, 8)
-                        .contentShape(Rectangle())
-                        .onTapGesture { Task { await c.open(r.id) } }
-                        .axButton("Chat " + r.title, id: "capi-conv-" + r.id,
-                                  value: r.running ? (r.busy ? "answering" : "running") : "stopped") { Task { await c.open(r.id) } }
-                        .pressHover()
-                        HStack(spacing: 0) {
-                            act("START", "Start", r, on: !r.running, color: Ink.green) { c.startConv(r.id) }
-                            act("STOP", "Stop", r, on: r.running, color: Ink.amber) { c.stopConv(r.id) }
-                            act("RENAME", "Rename", r, on: true, color: Ink.accent) { renaming = r }
-                            act("CLOSE", "Close", r, on: true, color: Ink.red) { c.closeConv(r) }
-                        }
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .padding(.vertical, 6).padding(.trailing, 6)
+                        .padding(.leading, 8).padding(.vertical, 8).padding(.trailing, 6)
                     }
                     .background(r.id == c.convId ? Ink.bg.opacity(0.6) : Color.clear)
                     Hairline()
@@ -502,7 +501,7 @@ struct CapiRoomList: View {
     /// One action word after the title: tap + Accessibility button named with the conversation ("Start <title>").
     @ViewBuilder
     func act(_ word: String, _ verb: String, _ r: ConvMeta, on: Bool, color: Color, _ action: @escaping () -> Void) -> some View {
-        Text(word).foregroundStyle(on ? color : Ink.grey.opacity(0.5))
+        Text(word).foregroundStyle(on ? color : Ink.grey.opacity(0.5)).unit()
             .padding(.horizontal, 4).padding(.vertical, 3)
             .contentShape(Rectangle())
             .onTapGesture { if on { action() } }
