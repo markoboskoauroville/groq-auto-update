@@ -1,6 +1,6 @@
 {
-  "version": 18,
-  "updated_at": "2026-11-18T14:00:00+0100",
+  "version": 19,
+  "updated_at": "2026-11-18T15:00:00+0100",
   "log": [
     {
       "version": 1,
@@ -113,6 +113,15 @@
         "mac_app/app/Flow.swift",
         "mac_app/app/Capi.swift",
         "mac_app/app/App.swift"
+      ]
+    },
+    {
+      "version": 19,
+      "timestamp": "2026-11-18T15:00:00+0100",
+      "message": "v19: list pane squeezes to 230 instead of overflowing at the minimum window width; model row left; chat list dates on one line",
+      "files": [
+        "mac_app/app/App.swift",
+        "mac_app/app/Capi.swift"
       ]
     }
   ]

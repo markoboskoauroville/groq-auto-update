@@ -431,6 +431,7 @@ struct CapiInput: View {
                 }
             }
             .font(.system(size: 13, weight: .bold, design: .monospaced))
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(12)
         .onAppear { focused = true }

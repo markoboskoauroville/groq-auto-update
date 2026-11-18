@@ -8,7 +8,7 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 
-let VERSION = 18
+let VERSION = 19
 let APP_NAME = "Queen"
 
 enum Ink {
@@ -217,8 +217,8 @@ struct ChatList: View {
                         Text(c.title).font(.system(size: 13, weight: c.id == q.chatId ? .bold : .regular))
                             .foregroundStyle(c.id == q.chatId ? Ink.accent : Ink.text)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text("\(c.count) messages  ·  \(String(c.updated.prefix(16)).replacingOccurrences(of: "T", with: " "))")
-                            .font(.system(size: 11, design: .monospaced)).foregroundStyle(Ink.dim)
+                        Text("\(c.count) messages · \(String(c.updated.prefix(16)).replacingOccurrences(of: "T", with: " "))")
+                            .font(.system(size: 11, design: .monospaced)).foregroundStyle(Ink.dim).unit()
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12).padding(.vertical, 8)
@@ -414,10 +414,10 @@ struct Root: View {
             HStack(spacing: 0) {
                 if cp.active {
                     if showCapiRooms {
-                        CapiRoomList().frame(width: capiListW)
+                        CapiRoomList().frame(minWidth: 230, idealWidth: capiListW, maxWidth: capiListW)
                         SplitHandle(width: $capiListW, minW: 230, maxW: 520, reset: 330)
                     }
-                    CapiConversation().frame(minWidth: 300)
+                    CapiConversation().frame(minWidth: 280)
                 } else if tr.active {
                     if showRooms {
                         RoomList().frame(width: 240)
@@ -426,7 +426,7 @@ struct Root: View {
                     TripleConversation()
                 } else {
                     if showChats {
-                        ChatList().frame(width: 240)
+                        ChatList().frame(width: 270)
                         Rectangle().fill(Ink.line).frame(width: 1)
                     }
                     Conversation()
