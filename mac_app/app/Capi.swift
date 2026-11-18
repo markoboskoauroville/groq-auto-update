@@ -336,10 +336,11 @@ final class Capi: ObservableObject {
 /// Top of the tab: the provider radios, the ONE credit number, the working folder, the chats.
 struct CapiHeader: View {
     @ObservedObject var c = Capi.shared
+    @Binding var showList: Bool
     var body: some View {
         // v20: groups divided by dim pipes, each group one unbreakable unit; whole groups wrap when narrow; NEW CHAT at the right end.
         FlowLayout(spacing: 8, rowSpacing: 0) {
-            HStack(spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("PROVIDER").foregroundStyle(Ink.dim).unit().padding(.horizontal, 6)
                 ForEach(c.providers) { p in
                     Word(text: (c.provider == p.id ? "◉ " : "○ ") + p.name.uppercased(), id: "capi-provider-" + p.id,
@@ -347,14 +348,14 @@ struct CapiHeader: View {
                          help: "Use \(p.name) for the next prompts") { c.setProvider(p.id) }
                 }
             }.unit().padding(.vertical, 2)
-            HStack(spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(c.creditText.replacingOccurrences(of: " ", with: "\u{00A0}")).foregroundStyle(Ink.red).unit()
                     .padding(.leading, 6)
                     .accessibilityIdentifier("capi-credit")
                     .onTapGesture { if c.provider == "oxyy" { c.askStartBalance() } }
                     .help(c.creditNote.isEmpty ? "Credit left for the chosen provider" : c.creditNote)
-                Image(systemName: "gearshape")                 // v13: the API key file (file picker, key read by shape)
-                    .font(.system(size: 13, weight: .regular)).foregroundStyle(Ink.text)
+                Text(Image(systemName: "gearshape"))           // v13: the API key file (file picker, key read by shape); a Text so it sits on the baseline
+                    .font(.system(size: 12, weight: .regular)).foregroundStyle(Ink.text)
                     .padding(.horizontal, 4).padding(.vertical, 4)
                     .contentShape(Rectangle())
                     .onTapGesture { c.pickKeyFile() }
@@ -362,7 +363,7 @@ struct CapiHeader: View {
                     .pressHover()
                     .help("Choose the file with the API key of the chosen provider; other text around it is fine")
             }.pipeGroup().padding(.vertical, 2)
-            HStack(spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(String(format: "this chat $%.4f", c.total).replacingOccurrences(of: " ", with: "\u{00A0}"))
                     .foregroundStyle(Ink.dim).unit()
                 if !c.keyNote.isEmpty {
@@ -371,7 +372,7 @@ struct CapiHeader: View {
                         .accessibilityIdentifier("capi-key-note")
                 }
             }.pipeGroup().padding(.vertical, 2)
-            HStack(spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("FOLDER").foregroundStyle(Ink.dim).unit().padding(.leading, 6)
                 Menu {
                     ForEach(c.folders) { f in Button(f.name) { c.setFolder(f.path) } }
@@ -387,6 +388,10 @@ struct CapiHeader: View {
             Word(text: "NEW CHAT", id: "capi-new-conversation",
                  help: "A clean chat: its own Claude Code process") { Task { await c.newConversation() } }
                 .pipeGroup().flowRight()
+            // v22: the CHATS toggle is back (Marko: "You deleted it, and I didn't ask you to"): hides the whole list pane
+            Word(text: "CHATS", id: "capi-chats", color: showList ? Ink.accent : Ink.text,
+                 help: "Show or hide the list of chats on the left: hidden, the chat fills the whole window") { showList.toggle() }
+                .pipeGroup().flowRight()
         }
         .clipped()
         .font(.system(size: 12, weight: .bold, design: .monospaced))
@@ -398,9 +403,24 @@ struct CapiHeader: View {
 struct CapiConversation: View {
     @ObservedObject var c = Capi.shared
     var body: some View {
+        VStack(spacing: 0) {
+            // v22: TOPIC | the chat's own title once more at the top of the chat
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("TOPIC").foregroundStyle(Ink.dim).unit()
+                Text("|").foregroundStyle(Ink.dim).unit()
+                Text(c.title.isEmpty ? "CAPI chat" : c.title).foregroundStyle(Ink.claude)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 12, weight: .bold, design: .monospaced))
+            .padding(.horizontal, 14).padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("capi-topic")
+            Hairline()
         MessageList(messages: c.messages,
                     empty: "Claude Code on your API credit. Ask for anything; it works in the folder above, remembers the chat across days, and shows one line per tool it uses. Several chats can work at the same time: the list on the left.",
                     notice: c.notice) { EmptyView() }
+        }
     }
 }
 
@@ -487,6 +507,7 @@ struct CapiRoomList: View {
                         .padding(.leading, 8).padding(.vertical, 8).padding(.trailing, 6)
                     }
                     .background(r.id == c.convId ? Ink.bg.opacity(0.6) : Color.clear)
+                    .overlay(r.id == c.convId ? RoundedRectangle(cornerRadius: 6).stroke(Ink.green, lineWidth: 1.5).padding(2) : nil)
                     Hairline()
                 }
             }

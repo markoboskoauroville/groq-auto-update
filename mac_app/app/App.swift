@@ -8,7 +8,7 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 
-let VERSION = 21
+let VERSION = 22
 let APP_NAME = "Queen"
 
 enum Ink {
@@ -156,8 +156,8 @@ struct StatusLine: View {
     var body: some View {
         // v20: groups divided by dim pipes; a group is one unbreakable unit and wraps whole; the tabs sit at the right end
         FlowLayout(spacing: 8, rowSpacing: 2) {
-            HStack(spacing: 6) {
-                Circle().fill(q.up ? Ink.green : (q.starting ? Ink.amber : Ink.red)).frame(width: 8, height: 8)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Circle().fill(q.up ? Ink.green : (q.starting ? Ink.amber : Ink.red)).frame(width: 8, height: 8).alignmentGuide(.firstTextBaseline) { d in d.height / 2 + 4.5 }
                 // the one version number: the app's own (release tag vN); a click opens the Latest release (version-visible.md)
                 Text("v\(VERSION)")
                     .font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundStyle(Ink.accent).unit()
@@ -178,7 +178,7 @@ struct StatusLine: View {
                     q.startServer()
                 }.pipeGroup().flowRight()
             }
-            HStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
             Word(text: "TRIPLE", id: "triple", color: tr.active ? Ink.claude : Ink.text,
                  help: "Triple chat: you, Queen and Claude in one room, everyone hears everyone") { cp.active = false; tr.toggle() }
                 
@@ -410,17 +410,20 @@ struct Root: View {
     @ObservedObject var tr = Triple.shared
     @ObservedObject var cp = Capi.shared
     @AppStorage("ui.capiListWidth") private var capiListW: Double = 330     // v18: the divider's width, remembered
+    @AppStorage("ui.capiShowList") private var capiShowList = true         // v22: CHATS hides the whole list pane
     var body: some View {
         VStack(spacing: 0) {
             TopRow()
             Hairline()
             StatusLine(showChats: $showChats)
             Hairline()
-            if cp.active { CapiHeader(); Hairline() }
+            if cp.active { CapiHeader(showList: $capiShowList); Hairline() }
             HStack(spacing: 0) {
                 if cp.active {
-                    CapiRoomList().frame(minWidth: 230, idealWidth: capiListW, maxWidth: capiListW)
-                    SplitHandle(width: $capiListW, minW: 230, maxW: 520, reset: 330)
+                    if capiShowList {
+                        CapiRoomList().frame(minWidth: 230, idealWidth: capiListW, maxWidth: capiListW)
+                        SplitHandle(width: $capiListW, minW: 230, maxW: 520, reset: 330)
+                    }
                     CapiConversation().frame(minWidth: 280)
                 } else if tr.active {
                     if showRooms {

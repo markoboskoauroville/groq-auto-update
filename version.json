@@ -1,6 +1,6 @@
 {
-  "version": 21,
-  "updated_at": "2026-11-18T17:00:00+0100",
+  "version": 22,
+  "updated_at": "2026-11-18T18:00:00+0100",
   "log": [
     {
       "version": 1,
@@ -142,6 +142,16 @@
         "mac_app/app/Flow.swift",
         "mac_app/app/App.swift",
         "mac_app/app/Capi.swift"
+      ]
+    },
+    {
+      "version": 22,
+      "timestamp": "2026-11-18T18:00:00+0100",
+      "message": "v22: rows on one baseline (FlowLayout aligns by firstTextBaseline), green outline on the active chat, TOPIC line, CHATS toggle back",
+      "files": [
+        "mac_app/app/Flow.swift",
+        "mac_app/app/Capi.swift",
+        "mac_app/app/App.swift"
       ]
     }
   ]
