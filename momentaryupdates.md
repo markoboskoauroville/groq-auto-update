@@ -195,3 +195,9 @@ Status: in progress (v22: green outline on the active chat, TOPIC line, baseline
 
 18.11.2026, Marko (word for word): "Please continue developing queen. Chat box at the bottom. First, resize it to be at the size of chat stream, and then you can extend, chat list to the bottom of the page. And then don't make any limitation in the length of the text inside the chat box. Make it completely unlimited. Resizable, and if there is more text, I want to see scroll bar."
 Status: in progress (v23: input inside the right pane under the chat, list to the window bottom, unlimited resizable input with scroll bar).
+
+18.11.2026, Marko (word for word): "One more radio button and a complete setup to get API enabled ... utilize these [Google Cloud free] credits with the queue."
+Status: in progress (v24: third provider radio Google Cloud: Gemini API + Claude on Vertex AI, paid from the GCP free credit).
+
+18.11.2026, Marko (word for word): "I need to have a file picker for my chat box so I can send you images and files. But this we can do with the new API. I enabled AntiGravity and Claude Opus 4.5."
+Status: in progress (v24: paperclip, drag-and-drop, paste, chips; images/PDF/text to Gemini and Claude).
