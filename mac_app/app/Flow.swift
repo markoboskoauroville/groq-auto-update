@@ -4,17 +4,20 @@
 import SwiftUI
 
 struct FlowRight: LayoutValueKey { static let defaultValue = false }
+struct FlowPipe: LayoutValueKey { static let defaultValue = false }
 
 /// Lays its children out left to right and moves a whole child to the next row when it does not fit.
+/// A child marked .flowRight() sits at the right end of its row. A pipe (from .pipeGroup()) belongs to the child AFTER it:
+/// they wrap together, and a pipe that would start a row is hidden (placed outside, clipped), so no separator ever dangles.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 4
     var rowSpacing: CGFloat = 2
+    var pipeGap: CGFloat = 6
 
     private func rows(_ subviews: Subviews, _ width: CGFloat) -> (frames: [CGRect], size: CGSize) {
-        var frames: [CGRect] = []
+        var frames = [CGRect](repeating: .zero, count: subviews.count)
         var x: CGFloat = 0, y: CGFloat = 0, rowH: CGFloat = 0, maxW: CGFloat = 0
         var rowStart = 0
-        // children marked .flowRight() sit at the right end of their row (v20): shift the tail of each row
         func closeRow(_ end: Int) {
             guard width.isFinite, end > rowStart else { return }
             var first = end
@@ -24,13 +27,31 @@ struct FlowLayout: Layout {
                 if shift > 0 { for i in first..<end { frames[i].origin.x += shift } }
             }
         }
+        var pipeIdx: Int? = nil
         for (idx, s) in subviews.enumerated() {
+            if s[FlowPipe.self] { pipeIdx = idx; continue }
             let sz = s.sizeThatFits(.unspecified)
-            if x > 0 && x + sz.width > width { closeRow(idx); rowStart = idx; x = 0; y += rowH + rowSpacing; rowH = 0 }
-            frames.append(CGRect(x: x, y: y, width: sz.width, height: sz.height))
-            x += sz.width + spacing
+            let pw = pipeIdx.map { subviews[$0].sizeThatFits(.unspecified).width + pipeGap } ?? 0
+            let start = pipeIdx ?? idx
+            if x > 0 && x + pw + sz.width > width {
+                closeRow(start); rowStart = start; x = 0; y += rowH + rowSpacing; rowH = 0
+            }
+            var lead: CGFloat = 0
+            if let p = pipeIdx {
+                let ps = subviews[p].sizeThatFits(.unspecified)
+                if x > 0 {
+                    frames[p] = CGRect(x: x, y: y, width: ps.width, height: ps.height)
+                    lead = pw
+                } else {
+                    frames[p] = CGRect(x: -10000, y: y, width: ps.width, height: ps.height)   // would start a row: hidden
+                }
+                rowH = max(rowH, x > 0 ? ps.height : 0)
+            }
+            frames[idx] = CGRect(x: x + lead, y: y, width: sz.width, height: sz.height)
+            x += lead + sz.width + spacing
             rowH = max(rowH, sz.height)
             maxW = max(maxW, x - spacing)
+            pipeIdx = nil
         }
         closeRow(subviews.count)
         return (frames, CGSize(width: width.isFinite ? max(maxW, width) : maxW, height: y + rowH))
@@ -52,7 +73,12 @@ extension View {
     /// In a FlowLayout: sit at the right end of the row.
     func flowRight() -> some View { layoutValue(key: FlowRight.self, value: true) }
     /// A logical group: a dim pipe BEFORE it, belonging to it, and the whole group one unbreakable unit.
-    func pipeGroup() -> some View { HStack(spacing: 6) { Text("|").foregroundStyle(Ink.dim); self }.unit() }
+    func pipeGroup() -> some View {
+        Group {
+            Text("|").foregroundStyle(Ink.dim).unit().layoutValue(key: FlowPipe.self, value: true)
+            self
+        }
+    }
     /// One unbreakable unit: a single line, never cut, never broken inside a word.
     func unit() -> some View { self.lineLimit(1).fixedSize(horizontal: true, vertical: false) }
 }

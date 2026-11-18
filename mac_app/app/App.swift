@@ -8,7 +8,7 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 
-let VERSION = 20
+let VERSION = 21
 let APP_NAME = "Queen"
 
 enum Ink {
@@ -178,17 +178,20 @@ struct StatusLine: View {
                     q.startServer()
                 }.pipeGroup().flowRight()
             }
+            HStack(spacing: 0) {
             Word(text: "TRIPLE", id: "triple", color: tr.active ? Ink.claude : Ink.text,
                  help: "Triple chat: you, Queen and Claude in one room, everyone hears everyone") { cp.active = false; tr.toggle() }
-                .flowRight()
+                
             Word(text: "CAPI", id: "capi", color: cp.active ? Ink.claude : Ink.text,
-                 help: "CAPI: chat with Claude Code on your API credit") { cp.toggle() }.flowRight()
+                 help: "CAPI: chat with Claude Code on your API credit") { cp.toggle() }
             Word(text: "CHATS", id: "chats", color: showChats ? Ink.accent : Ink.text, help: "Your saved chats with Queen") {
                 showChats.toggle()
                 if showChats { Task { await q.loadChats() } }
-            }.flowRight()
-            Word(text: "NEW CHAT", id: "new-chat", help: "A clean chat") { q.newChat() }.flowRight()
+            }
+            Word(text: "NEW CHAT", id: "new-chat", help: "A clean chat") { q.newChat() }
+            }.unit().flowRight()
         }
+        .clipped()
         .font(.system(size: 12, weight: .bold, design: .monospaced))
         .padding(.horizontal, 14).padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)

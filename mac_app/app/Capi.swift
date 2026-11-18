@@ -388,6 +388,7 @@ struct CapiHeader: View {
                  help: "A clean chat: its own Claude Code process") { Task { await c.newConversation() } }
                 .pipeGroup().flowRight()
         }
+        .clipped()
         .font(.system(size: 12, weight: .bold, design: .monospaced))
         .padding(.horizontal, 8).padding(.vertical, 2)
         .frame(maxWidth: .infinity, alignment: .leading)
