@@ -177,3 +177,6 @@ Status: in progress (v16, version label is a link to the Latest release).
 
 17.11.2026, Marko (word for word): "Yes. This is very confusing because the number v 10 is all... Already there. Please make that version number so it it it bumps up between versions."
 Status: in progress (v16, one number: VERSION = release tag = version.json, checked in the workflow).
+
+18.11.2026, Marko (word for word): "First, fix the bug in this application. Every new conversation, first of all, change "conversation" to "chat." So new chat comes at the top of the chats, never somewhere random. It's always at the top. Second, go to my Downloads API Keys and find the key by the name of Oxyw. This application needs to have radio buttons at the top for all API providers, and I can just choose which API provider I'm using. For now, I have Anthropic, and I have Oxx. You can load the new key Oxy with a file picker and just use a Haiku model to test if it works, spending at least as many credits as possible. Also, have the same cost for Anthropic and for XAI. We need to see the credits available, and radio buttons at the top to seamlessly switch between API providers."
+Status: in progress (v17: chats not conversations, new chat on top, provider radios Anthropic / oxyy.ai, credits and cost for both).
