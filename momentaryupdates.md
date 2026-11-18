@@ -183,3 +183,6 @@ Status: in progress (v17: chats not conversations, new chat on top, provider rad
 
 18.11.2026, Marko (word for word): "Please, in my Queen app, add one more feature: one more action button, and that is a Rename. When there are Start, Stop, Close, I want to have a Rename action so I can rename the chat by my liking. When the Rename is open, add an Automatic Name button. This will use Haiku Call to read the whole chat and make a name automatically."
 Status: in progress (v17, RENAME beside START / STOP / CLOSE, AUTOMATIC NAME = one Haiku call).
+
+18.11.2026, Marko (word for word): "Please don't break the lines in the user interface. "Start" and "Stop" are broken. Provide a Atropic Onyx and all other data which can be in one line should be in one line. Make this UI auto-wrap so it's not breaking things. Also, the divider between the chats in the left and right windows should be resizable. When there is a title and the chat itself, "Start" and "Stop" should be renamed "Close." Feel free to make it in two lines: "Start" on the first line, "Stop Close" on the second line. Nothing will be broken. Write in the manifest that we don't create UI with broken titles. For example, "Star" and "T" are in new lines. That's not allowed."
+Status: in progress (v18, unbreakable labels, flow layout, draggable divider, manifest rule).
