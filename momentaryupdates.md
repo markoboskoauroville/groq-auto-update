@@ -201,3 +201,6 @@ Status: in progress (v24: third provider radio Google Cloud: Gemini API + Claude
 
 18.11.2026, Marko (word for word): "I need to have a file picker for my chat box so I can send you images and files. But this we can do with the new API. I enabled AntiGravity and Claude Opus 4.5."
 Status: in progress (v24: paperclip, drag-and-drop, paste, chips; images/PDF/text to Gemini and Claude).
+
+18.11.2026, Marko (word for word): "I press the back button, and I don't know where I am. I don't want to use the Anthropic model since this is a problem. I just want to be in these donation credits with Google Cloud and their models. Please make this work. By switching between Anthropic and Google, you can test how Google works, and I want one option for Anthropic. This is a bypass queen. Our model. qwen I want in certain situation not to be used and not to be trained."
+Status: in progress (v25: Google Cloud = Gemini only; CAPI chats bypass Queen and are never trained; per-chat QUEEN: OFF switch; radio switching both ways).
