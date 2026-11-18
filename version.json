@@ -1,6 +1,6 @@
 {
-  "version": 19,
-  "updated_at": "2026-11-18T15:00:00+0100",
+  "version": 20,
+  "updated_at": "2026-11-18T16:00:00+0100",
   "log": [
     {
       "version": 1,
@@ -122,6 +122,16 @@
       "files": [
         "mac_app/app/App.swift",
         "mac_app/app/Capi.swift"
+      ]
+    },
+    {
+      "version": 20,
+      "timestamp": "2026-11-18T16:00:00+0100",
+      "message": "v20: chat actions on one line RENAME START STOP CLOSE, NEW CHAT right-aligned after a pipe, CAPI CHATS button gone (list always shown), pipes between logical groups in the headers and status line",
+      "files": [
+        "mac_app/app/Flow.swift",
+        "mac_app/app/Capi.swift",
+        "mac_app/app/App.swift"
       ]
     }
   ]

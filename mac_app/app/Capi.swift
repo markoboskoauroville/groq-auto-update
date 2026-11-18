@@ -336,55 +336,57 @@ final class Capi: ObservableObject {
 /// Top of the tab: the provider radios, the ONE credit number, the working folder, the chats.
 struct CapiHeader: View {
     @ObservedObject var c = Capi.shared
-    @Binding var showRooms: Bool
     var body: some View {
-        // v18: every piece is an unbreakable unit; whole units wrap to the next row when the window is narrow.
-        FlowLayout(spacing: 4, rowSpacing: 0) {
-            Text("PROVIDER").foregroundStyle(Ink.dim).unit().padding(.horizontal, 6).padding(.vertical, 4)
-            ForEach(c.providers) { p in
-                Word(text: (c.provider == p.id ? "◉ " : "○ ") + p.name.uppercased(), id: "capi-provider-" + p.id,
-                     color: c.provider == p.id ? Ink.accent : Ink.text,
-                     help: "Use \(p.name) for the next prompts") { c.setProvider(p.id) }
-            }
-            Text(c.creditText.replacingOccurrences(of: " ", with: "\u{00A0}")).foregroundStyle(Ink.red).unit()
+        // v20: groups divided by dim pipes, each group one unbreakable unit; whole groups wrap when narrow; NEW CHAT at the right end.
+        FlowLayout(spacing: 8, rowSpacing: 0) {
+            HStack(spacing: 4) {
+                Text("PROVIDER").foregroundStyle(Ink.dim).unit().padding(.horizontal, 6)
+                ForEach(c.providers) { p in
+                    Word(text: (c.provider == p.id ? "◉ " : "○ ") + p.name.uppercased(), id: "capi-provider-" + p.id,
+                         color: c.provider == p.id ? Ink.accent : Ink.text,
+                         help: "Use \(p.name) for the next prompts") { c.setProvider(p.id) }
+                }
+            }.unit().padding(.vertical, 2)
+            HStack(spacing: 4) {
+                Text(c.creditText.replacingOccurrences(of: " ", with: "\u{00A0}")).foregroundStyle(Ink.red).unit()
+                    .padding(.leading, 6)
+                    .accessibilityIdentifier("capi-credit")
+                    .onTapGesture { if c.provider == "oxyy" { c.askStartBalance() } }
+                    .help(c.creditNote.isEmpty ? "Credit left for the chosen provider" : c.creditNote)
+                Image(systemName: "gearshape")                 // v13: the API key file (file picker, key read by shape)
+                    .font(.system(size: 13, weight: .regular)).foregroundStyle(Ink.text)
+                    .padding(.horizontal, 4).padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                    .onTapGesture { c.pickKeyFile() }
+                    .axButton("API key file", id: "capi-key-gear") { c.pickKeyFile() }
+                    .pressHover()
+                    .help("Choose the file with the API key of the chosen provider; other text around it is fine")
+            }.pipeGroup().padding(.vertical, 2)
+            HStack(spacing: 6) {
+                Text(String(format: "this chat $%.4f", c.total).replacingOccurrences(of: " ", with: "\u{00A0}"))
+                    .foregroundStyle(Ink.dim).unit()
+                if !c.keyNote.isEmpty {
+                    Text(c.keyNote.replacingOccurrences(of: " ", with: "\u{00A0}"))
+                        .foregroundStyle(c.keyNote.hasPrefix("API key loaded") ? Ink.green : Ink.red).unit()
+                        .accessibilityIdentifier("capi-key-note")
+                }
+            }.pipeGroup().padding(.vertical, 2)
+            HStack(spacing: 4) {
+                Text("FOLDER").foregroundStyle(Ink.dim).unit().padding(.leading, 6)
+                Menu {
+                    ForEach(c.folders) { f in Button(f.name) { c.setFolder(f.path) } }
+                } label: {
+                    Text(c.folderName.isEmpty ? "…" : c.folderName).foregroundStyle(Ink.accent).unit()
+                }
+                .menuStyle(.borderlessButton).fixedSize()
                 .padding(.horizontal, 6).padding(.vertical, 4)
-                .accessibilityIdentifier("capi-credit")
-                .onTapGesture { if c.provider == "oxyy" { c.askStartBalance() } }
-                .help(c.creditNote.isEmpty ? "Credit left for the chosen provider" : c.creditNote)
-            Image(systemName: "gearshape")                 // v13: the API key file (file picker, key read by shape)
-                .font(.system(size: 13, weight: .regular)).foregroundStyle(Ink.text)
-                .padding(.horizontal, 4).padding(.vertical, 4)
-                .contentShape(Rectangle())
-                .onTapGesture { c.pickKeyFile() }
-                .axButton("API key file", id: "capi-key-gear") { c.pickKeyFile() }
                 .pressHover()
-                .help("Choose the file with the API key of the chosen provider; other text around it is fine")
-            Text(String(format: "this chat $%.4f", c.total).replacingOccurrences(of: " ", with: "\u{00A0}"))
-                .foregroundStyle(Ink.dim).unit().padding(.vertical, 4)
-            if !c.keyNote.isEmpty {
-                Text(c.keyNote.replacingOccurrences(of: " ", with: "\u{00A0}"))
-                    .foregroundStyle(c.keyNote.hasPrefix("API key loaded") ? Ink.green : Ink.red).unit()
-                    .padding(.vertical, 4)
-                    .accessibilityIdentifier("capi-key-note")
-            }
-            Word(text: "CHATS", id: "capi-conversations", color: showRooms ? Ink.accent : Ink.text,
-                 help: "Your CAPI chats: switch, start, stop, close") {
-                showRooms.toggle()
-                if showRooms { Task { await c.loadConvs() } }
-            }
+                .accessibilityIdentifier("capi-folder")
+                .help("The folder Claude Code works in")
+            }.pipeGroup()
             Word(text: "NEW CHAT", id: "capi-new-conversation",
                  help: "A clean chat: its own Claude Code process") { Task { await c.newConversation() } }
-            Text("FOLDER").foregroundStyle(Ink.dim).unit().padding(.horizontal, 6).padding(.vertical, 4)
-            Menu {
-                ForEach(c.folders) { f in Button(f.name) { c.setFolder(f.path) } }
-            } label: {
-                Text(c.folderName.isEmpty ? "…" : c.folderName).foregroundStyle(Ink.accent).unit()
-            }
-            .menuStyle(.borderlessButton).fixedSize()
-            .padding(.horizontal, 6).padding(.vertical, 4)
-            .pressHover()
-            .accessibilityIdentifier("capi-folder")
-            .help("The folder Claude Code works in")
+                .pipeGroup().flowRight()
         }
         .font(.system(size: 12, weight: .bold, design: .monospaced))
         .padding(.horizontal, 8).padding(.vertical, 2)
@@ -396,7 +398,7 @@ struct CapiConversation: View {
     @ObservedObject var c = Capi.shared
     var body: some View {
         MessageList(messages: c.messages,
-                    empty: "Claude Code on your API credit. Ask for anything; it works in the folder above, remembers the chat across days, and shows one line per tool it uses. Several chats can work at the same time: CHATS.",
+                    empty: "Claude Code on your API credit. Ask for anything; it works in the folder above, remembers the chat across days, and shows one line per tool it uses. Several chats can work at the same time: the list on the left.",
                     notice: c.notice) { EmptyView() }
     }
 }
@@ -472,14 +474,12 @@ struct CapiRoomList: View {
                             .axButton("Chat " + r.title, id: "capi-conv-" + r.id,
                                       value: r.running ? (r.busy ? "answering" : "running") : "stopped") { Task { await c.open(r.id) } }
                             .pressHover()
-                            // v18: START on the first row, then STOP RENAME CLOSE; whole buttons wrap, never letters
-                            VStack(alignment: .leading, spacing: 0) {
+                            // v20: ONE line RENAME START STOP CLOSE; only a narrow pane wraps, whole buttons, never letters
+                            FlowLayout(spacing: 0, rowSpacing: 0) {
+                                act("RENAME", "Rename", r, on: true, color: Ink.accent) { renaming = r }
                                 act("START", "Start", r, on: !r.running, color: Ink.green) { c.startConv(r.id) }
-                                FlowLayout(spacing: 0, rowSpacing: 0) {
-                                    act("STOP", "Stop", r, on: r.running, color: Ink.amber) { c.stopConv(r.id) }
-                                    act("RENAME", "Rename", r, on: true, color: Ink.accent) { renaming = r }
-                                    act("CLOSE", "Close", r, on: true, color: Ink.red) { c.closeConv(r) }
-                                }
+                                act("STOP", "Stop", r, on: r.running, color: Ink.amber) { c.stopConv(r.id) }
+                                act("CLOSE", "Close", r, on: true, color: Ink.red) { c.closeConv(r) }
                             }
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
                         }

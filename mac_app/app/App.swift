@@ -8,7 +8,7 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 
-let VERSION = 19
+let VERSION = 20
 let APP_NAME = "Queen"
 
 enum Ink {
@@ -154,55 +154,58 @@ struct StatusLine: View {
     @ObservedObject var cp = Capi.shared
     @Binding var showChats: Bool
     var body: some View {
-        HStack(spacing: 10) {
-            Circle().fill(q.up ? Ink.green : (q.starting ? Ink.amber : Ink.red)).frame(width: 8, height: 8)
-            // the one version number: the app's own (release tag vN); a click opens the Latest release (version-visible.md)
-            Text("v\(VERSION)")
-                .font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundStyle(Ink.accent).unit()
-                .padding(.horizontal, 4).contentShape(Rectangle())
-                .onTapGesture { StatusLine.openLatest() }
-                .accessibilityElement(children: .ignore).accessibilityLabel("version")
-                .accessibilityIdentifier("version").accessibilityValue("v\(VERSION)")
-                .accessibilityAddTraits(.isButton).accessibilityAction(.default) { StatusLine.openLatest() }
-                .pressHover()
-                .help("Version \(VERSION): click to open the newest version on GitHub")
-            Text(statusText)
-                .font(.system(size: 12, design: .monospaced)).foregroundStyle(Ink.dim)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-            Spacer(minLength: 8)
+        // v20: groups divided by dim pipes; a group is one unbreakable unit and wraps whole; the tabs sit at the right end
+        FlowLayout(spacing: 8, rowSpacing: 2) {
+            HStack(spacing: 6) {
+                Circle().fill(q.up ? Ink.green : (q.starting ? Ink.amber : Ink.red)).frame(width: 8, height: 8)
+                // the one version number: the app's own (release tag vN); a click opens the Latest release (version-visible.md)
+                Text("v\(VERSION)")
+                    .font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundStyle(Ink.accent).unit()
+                    .padding(.horizontal, 4).contentShape(Rectangle())
+                    .onTapGesture { StatusLine.openLatest() }
+                    .accessibilityElement(children: .ignore).accessibilityLabel("version")
+                    .accessibilityIdentifier("version").accessibilityValue("v\(VERSION)")
+                    .accessibilityAddTraits(.isButton).accessibilityAction(.default) { StatusLine.openLatest() }
+                    .pressHover()
+                    .help("Version \(VERSION): click to open the newest version on GitHub")
+            }.unit()
+            ForEach(Array(statusParts.enumerated()), id: \.offset) { _, p in
+                Text(p).font(.system(size: 12, design: .monospaced)).foregroundStyle(Ink.dim).textSelection(.enabled)
+                    .pipeGroup()
+            }
             if (!q.up || !q.backend) && !q.starting {
                 Word(text: "START QUEEN", id: "start-queen", color: Ink.amber, help: "Start Queen's backend again (~/.groq/qwen on 8766)") {
                     q.startServer()
-                }
+                }.pipeGroup().flowRight()
             }
             Word(text: "TRIPLE", id: "triple", color: tr.active ? Ink.claude : Ink.text,
                  help: "Triple chat: you, Queen and Claude in one room, everyone hears everyone") { cp.active = false; tr.toggle() }
+                .flowRight()
             Word(text: "CAPI", id: "capi", color: cp.active ? Ink.claude : Ink.text,
-                 help: "CAPI: chat with Claude Code on your API credit") { cp.toggle() }
+                 help: "CAPI: chat with Claude Code on your API credit") { cp.toggle() }.flowRight()
             Word(text: "CHATS", id: "chats", color: showChats ? Ink.accent : Ink.text, help: "Your saved chats with Queen") {
                 showChats.toggle()
                 if showChats { Task { await q.loadChats() } }
-            }
-            Word(text: "NEW CHAT", id: "new-chat", help: "A clean chat") { q.newChat() }
+            }.flowRight()
+            Word(text: "NEW CHAT", id: "new-chat", help: "A clean chat") { q.newChat() }.flowRight()
         }
         .font(.system(size: 12, weight: .bold, design: .monospaced))
         .padding(.horizontal, 14).padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     static func openLatest() {
         if let u = URL(string: "https://github.com/markoboskoauroville/groq_ai_studio/releases/latest") { NSWorkspace.shared.open(u) }
     }
 
-    var statusText: String {
-        guard q.up else { return "Queen \(q.line)" }
+    var statusParts: [String] {
+        guard q.up else { return ["Queen \(q.line)".replacingOccurrences(of: " ", with: "\u{00A0}")] }
         var parts = ["Queen"]
         if !q.model.isEmpty { parts.append(q.model) }
         parts.append("keys \(q.keys)" + (q.cooling > 0 ? " (\(q.cooling) cooling)" : ""))
         parts.append(String(format: "spent $%.4f", q.spent))
         if !q.backend { parts.append("backend 8766 down") }
-        // no-break spaces inside each part: a narrow window wraps between the parts, never inside "keys 1"
-        return parts.map { $0.replacingOccurrences(of: " ", with: "\u{00A0}") }.joined(separator: "  ·  ")
+        return parts.map { $0.replacingOccurrences(of: " ", with: "\u{00A0}") }
     }
 }
 
@@ -410,13 +413,11 @@ struct Root: View {
             Hairline()
             StatusLine(showChats: $showChats)
             Hairline()
-            if cp.active { CapiHeader(showRooms: $showCapiRooms); Hairline() }
+            if cp.active { CapiHeader(); Hairline() }
             HStack(spacing: 0) {
                 if cp.active {
-                    if showCapiRooms {
-                        CapiRoomList().frame(minWidth: 230, idealWidth: capiListW, maxWidth: capiListW)
-                        SplitHandle(width: $capiListW, minW: 230, maxW: 520, reset: 330)
-                    }
+                    CapiRoomList().frame(minWidth: 230, idealWidth: capiListW, maxWidth: capiListW)
+                    SplitHandle(width: $capiListW, minW: 230, maxW: 520, reset: 330)
                     CapiConversation().frame(minWidth: 280)
                 } else if tr.active {
                     if showRooms {

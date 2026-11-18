@@ -3,6 +3,8 @@
 // never truncated); when space is short WHOLE units move to the next row, never letters.
 import SwiftUI
 
+struct FlowRight: LayoutValueKey { static let defaultValue = false }
+
 /// Lays its children out left to right and moves a whole child to the next row when it does not fit.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 4
@@ -11,15 +13,27 @@ struct FlowLayout: Layout {
     private func rows(_ subviews: Subviews, _ width: CGFloat) -> (frames: [CGRect], size: CGSize) {
         var frames: [CGRect] = []
         var x: CGFloat = 0, y: CGFloat = 0, rowH: CGFloat = 0, maxW: CGFloat = 0
-        for s in subviews {
+        var rowStart = 0
+        // children marked .flowRight() sit at the right end of their row (v20): shift the tail of each row
+        func closeRow(_ end: Int) {
+            guard width.isFinite, end > rowStart else { return }
+            var first = end
+            while first > rowStart && subviews[first - 1][FlowRight.self] { first -= 1 }
+            if first < end {
+                let shift = width - frames[end - 1].maxX
+                if shift > 0 { for i in first..<end { frames[i].origin.x += shift } }
+            }
+        }
+        for (idx, s) in subviews.enumerated() {
             let sz = s.sizeThatFits(.unspecified)
-            if x > 0 && x + sz.width > width { x = 0; y += rowH + rowSpacing; rowH = 0 }
+            if x > 0 && x + sz.width > width { closeRow(idx); rowStart = idx; x = 0; y += rowH + rowSpacing; rowH = 0 }
             frames.append(CGRect(x: x, y: y, width: sz.width, height: sz.height))
             x += sz.width + spacing
             rowH = max(rowH, sz.height)
             maxW = max(maxW, x - spacing)
         }
-        return (frames, CGSize(width: maxW, height: y + rowH))
+        closeRow(subviews.count)
+        return (frames, CGSize(width: width.isFinite ? max(maxW, width) : maxW, height: y + rowH))
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -35,6 +49,10 @@ struct FlowLayout: Layout {
 }
 
 extension View {
+    /// In a FlowLayout: sit at the right end of the row.
+    func flowRight() -> some View { layoutValue(key: FlowRight.self, value: true) }
+    /// A logical group: a dim pipe BEFORE it, belonging to it, and the whole group one unbreakable unit.
+    func pipeGroup() -> some View { HStack(spacing: 6) { Text("|").foregroundStyle(Ink.dim); self }.unit() }
     /// One unbreakable unit: a single line, never cut, never broken inside a word.
     func unit() -> some View { self.lineLimit(1).fixedSize(horizontal: true, vertical: false) }
 }
