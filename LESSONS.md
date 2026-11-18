@@ -241,3 +241,8 @@ One chat module: MessageList + Bubble + MarkdownView + SpeakerButton serve norma
 - 18.11.2026 (v22): "floating text" = items in a row aligned by top/centre. Use baselines: HStack(alignment: .firstTextBaseline) and, in a custom Layout, ViewDimensions[.firstTextBaseline]. An Image has no text baseline: use Text(Image(systemName:)). Never remove a control that was only to be moved (CHATS in v20). Verify by cropping and zooming the screenshot.
 
 - 18.11.2026 (v23): a SwiftUI TextField(axis: .vertical).lineLimit(1...8) caps the box; for an unlimited, resizable box with a scroll bar use NSTextView in NSScrollView (legacy scroller). A drag test with cliclick needs the window active first: the first mouse-down on an inactive window only activates it. Queen has two AX windows (an empty-named 37 pt one and "Queen"): `set size of window "Queen"`, not window 1. AX cannot set a text view's value here: click in the box, then Edit > Paste through System Events.
+
+## v24 (18.11.2026)
+- The Python backend Queen runs on is Homebrew 3.13 under the Swift app: a library installed for the shell's python3 is not there. Check with that interpreter (the Python.app binary in `ps`), install with pip --break-system-packages, then kill the backend child (the Swift app restarts it within 20 s). A kill right after pip once still showed the old "not installed" line: retest after the new pid.
+- Vertex AI refuses API keys (401 "API keys are not supported"): Claude there needs ADC plus Anthropic's access; a missing sign-in is a plain "not ready yet" line, never a stack trace.
+- The CAPI "main chat" is Swift (Capi.swift) over capi_chat.py, not index.html: provider radios and the file picker live there, and the Swift part is compiled only by the mac-app workflow.

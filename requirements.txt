@@ -4,3 +4,5 @@ groq
 python-dotenv
 websocket-client>=1.8   # Queen's Gemini hand (Chrome DevTools)
 pyobjc-framework-Quartz>=10; sys_platform == "darwin"   # Queen's Chrome Allow watcher (Macro Recorder)
+google-auth>=2.25   # Claude on Vertex AI: Application Default Credentials (v24)
+requests   # google-auth transport

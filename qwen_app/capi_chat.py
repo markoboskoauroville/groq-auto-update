@@ -70,7 +70,7 @@ def _save(room):
 
 
 def _new(cwd=None, model=None):
-    room = {"id": secrets.token_hex(5), "title": "CAPI chat", "provider": get_provider(), "model": model if model in MODELS else DEFAULT_MODEL,
+    room = {"id": secrets.token_hex(5), "title": "CAPI chat", "provider": get_provider(), "model": model if model in MODELS else DEFAULT_MODEL, "gmodel": "",
             "cwd": _ok_cwd(cwd), "session": str(uuid.uuid4()), "started": False, "total": 0.0, "messages": [],
             "created": time.time(), "updated": _now()}
     _save(room)
@@ -96,6 +96,7 @@ PROVIDERS = {
     "oxyy": {"name": "Oxyy", "key_file": Path.home() / ".groq" / "capi_key_oxyy", "name_hint": "oxyy",
              "base_url": "https://api.oxyy.ai", "factor": 0.4},
 }
+PROVIDERS["gcloud"] = {"name": "Google Cloud", "key_file": None, "name_hint": "CGP_free_credits", "base_url": "", "factor": 1.0}
 PROVIDER_FILE = Path.home() / ".groq" / "capi_provider.json"
 OXYY_BALANCE = Path.home() / ".groq" / "capi_oxyy_balance.json"      # {"start_usd": 5.0, "at": epoch}
 OXYY_LEDGER = Path.home() / ".cache" / "oxyy-ledger.jsonl"
@@ -142,6 +143,9 @@ def _key(provider=None):
     """The gear's file first (~/.groq/capi_key[_oxyy]), else the ~/Downloads/API file whose name has the hint."""
     provider = provider or get_provider()
     P = PROVIDERS[provider]
+    if provider == "gcloud":                 # v24: read at runtime from the CGP_free_credits file by gcloud_chat, never stored here
+        import gcloud_chat
+        return "set" if gcloud_chat.has_key() else ""
     try:
         k = _key_in(provider, P["key_file"].read_text(errors="ignore"))
         if k:
@@ -159,6 +163,8 @@ def _key(provider=None):
 def load_key_file(path, provider=None):
     """The gear: read a file Marko picked, take that provider's key out of it by shape, keep it in ~/.groq/capi_key[_oxyy]."""
     provider = provider if provider in PROVIDERS else get_provider()
+    if provider == "gcloud":
+        return {"ok": False, "error": "Google Cloud reads its key by itself from the CGP_free_credits file in Downloads/API."}
     f = Path(os.path.expanduser(path or ""))
     if not f.is_file():
         return {"ok": False, "error": "no such file"}
@@ -205,6 +211,9 @@ def set_oxyy_balance(usd):
 
 def _credit_left(provider=None):
     provider = provider or get_provider()
+    if provider == "gcloud":
+        import gcloud_chat
+        return gcloud_chat.left()
     if provider == "oxyy":
         try:
             start = float(json.loads(OXYY_BALANCE.read_text()).get("start_usd"))
@@ -277,11 +286,14 @@ class Conv:
             _save(self.room)
 
     def running(self):
-        return bool(self.proc and self.proc.poll() is None)
+        g = getattr(self, "gthread", None)
+        return bool((self.proc and self.proc.poll() is None) or (g and g.is_alive()))
 
     def start(self):
         with self.lock:
             if self.running():
+                return True
+            if get_provider() == "gcloud":      # v24: Google Cloud is plain HTTP calls, no process to start
                 return True
             r = self.room
             prov = r.get("provider") if r.get("provider") in PROVIDERS else "anthropic"
@@ -325,7 +337,7 @@ class Conv:
             threading.Thread(target=self._read, args=(self.proc,), daemon=True).start()
             return True
 
-    def send(self, text):
+    def send(self, text, files=None):
         with self.lock:
             want = get_provider()          # v17: the radio decides; a chat on the other provider restarts on this one
             if self.room.get("provider") != want:
@@ -334,6 +346,8 @@ class Conv:
                     self.proc = None
                 self.room["provider"] = want
                 self.stopping = False
+            if want == "gcloud":
+                return self._send_gcloud(text, files)
             if not self.start():
                 return False
             r = self.room
@@ -344,6 +358,22 @@ class Conv:
             if r.get("title") in ("CAPI chat", "", None):
                 r["title"] = text.strip().splitlines()[0][:48] or "CAPI chat"
             payload = text
+            if files:                                   # v24: attachments for Claude Code (image / document blocks, text inlined)
+                import gcloud_chat
+                prepared, err = gcloud_chat.prepare_files(files)
+                if err:
+                    self.pending["status"] = "failed"
+                    self.pending["reason"] = err
+                    self.pending = None
+                    self.busy = False
+                    self.error = err
+                    self.save()
+                    return False
+                self.pending["files"] = [f["name"] for f in prepared]
+                payload = gcloud_chat._claude_content(text, prepared)
+            if self.primer and isinstance(payload, list):
+                payload.insert(0, {"type": "text", "text": "(earlier conversation stored by Queen; session file gone)"})
+                self.primer = False
             if self.primer:
                 hist = "\n\n".join(f'{"Marko" if m["role"] == "marko" else "Claude"}: {m["text"]}'
                                     for m in r["messages"][:-1] if m.get("role") in ("marko", "claude"))
@@ -364,6 +394,60 @@ class Conv:
                 self.save()
                 return False
             return True
+
+    def _send_gcloud(self, text, files):
+        """Google Cloud turn (v24): one HTTP call in a thread; the answer lands in the chat file like any other."""
+        import gcloud_chat
+        r = self.room
+        if self.running() and self.busy:
+            self.error = "still answering"
+            return False
+        prepared, err = gcloud_chat.prepare_files(files or [])
+        hist = [(m["role"], m["text"] + (f' [attached: {", ".join(m["files"])}]' if m.get("files") else ""))
+                for m in r["messages"] if m.get("role") in ("marko", "claude")]
+        models = None
+        model = r.get("gmodel") or ""
+        if not model:
+            model = gcloud_chat.default_gemini(gcloud_chat.gemini_models())
+            r["gmodel"] = model
+        if self.pending is not None:
+            self._mark("done")
+        msg = {"role": "marko", "text": text, "status": "sent"}
+        if prepared:
+            msg["files"] = [f["name"] for f in prepared]
+        r["messages"].append(msg)
+        self.pending = msg
+        if r.get("title") in ("CAPI chat", "", None):
+            r["title"] = text.strip().splitlines()[0][:48] or "CAPI chat"
+        self.error = ""
+        if err:                                           # too big / unsupported: one plain line, nothing sent
+            self.error = err
+            self._mark("failed", err)
+            self.save()
+            return False
+        self.busy = True
+        self.prompt = text
+        self.save()
+        self.gthread = threading.Thread(target=self._gworker, args=(model, hist, text, prepared), daemon=True)
+        self.gthread.start()
+        return True
+
+    def _gworker(self, model, hist, text, files):
+        import gcloud_chat
+        self._mark("received")
+        res = gcloud_chat.run(model, hist, text, files)
+        with self.lock:
+            if "error" in res:
+                self.error = res["error"]
+                self._mark("failed", res["error"])
+            else:
+                self.room["messages"].append({"role": "claude", "text": res["text"], "cost": res["cost"], "model": model})
+                self.room["total"] = round(self.room.get("total", 0.0) + res["cost"], 4)
+                self._mark("done")
+            self.busy = False
+            self.turns += 1
+            self.save()
+            self.done.notify_all()
 
     def _mark(self, status, reason=""):
         """Status of the prompt being answered (v13): received once claude shows it took it, done / failed at the end."""
@@ -470,6 +554,7 @@ class Conv:
             return {"running": self.running(), "busy": self.busy and self.running(), "error": self.error}
 
 
+
 _convs: dict[str, Conv] = {}
 
 
@@ -503,7 +588,7 @@ def _stop_all():
 atexit.register(_stop_all)
 
 
-def run_turn(room, text):
+def run_turn(room, text, files=None):
     """Streaming form of one turn (the old /api/capi/turn): send, then yield what lands until the answer is done."""
     c = _conv(room["id"])
     if not c:
@@ -511,7 +596,7 @@ def run_turn(room, text):
         return
     with c.lock:
         n = len(c.room["messages"]) + 1
-        if not c.send(text):
+        if not c.send(text, files):
             yield {"error": c.error or "could not send"}
             return
     while True:
@@ -591,13 +676,15 @@ def _credit_info():
     provs = []
     for pid, P in PROVIDERS.items():
         provs.append({"id": pid, "name": P["name"], "has_key": bool(_key(pid)), "left": _credit_left(pid),
-                      "estimate": pid == "oxyy"})
+                      "estimate": pid in ("oxyy", "gcloud")})
     left = _credit_left(cur)
     note = ""
     if cur == "oxyy" and left is None:
         note = "Oxyy has no balance endpoint: tell Queen your starting balance (click the credit) and she counts down from it."
     elif cur == "oxyy":
         note = "Oxyy has no balance endpoint: the credit is your starting balance minus what Queen booked (estimate)."
+    if cur == "gcloud":
+        note = "Google Cloud free credit ($254 on 18.11.2026, expires about 9.12.2026), project antigravity-cloud-offload: the number is an estimate from token prices."
     return {"left": left, "has_key": bool(_key(cur)), "provider": cur, "name": PROVIDERS[cur]["name"],
             "providers": provs, "note": note}
 
@@ -624,6 +711,20 @@ def register(app):
     def capi_oxyy_balance():
         try:
             set_oxyy_balance(float(body().get("usd")))
+        except Exception:
+            return jsonify({"ok": False, "error": "a number in dollars"}), 400
+        return jsonify({"ok": True, **_credit_info()})
+
+    @app.get("/api/capi/gcloud_models")
+    def capi_gcloud_models():
+        import gcloud_chat
+        return jsonify(gcloud_chat.models_info())
+
+    @app.post("/api/capi/gcloud_balance")
+    def capi_gcloud_balance():
+        import gcloud_chat
+        try:
+            gcloud_chat.set_balance(float(body().get("usd")))
         except Exception:
             return jsonify({"ok": False, "error": "a number in dollars"}), 400
         return jsonify({"ok": True, **_credit_info()})
@@ -699,6 +800,8 @@ def register(app):
         restart = False
         with c.lock:
             r = c.room
+            if isinstance(b.get("gmodel"), str) and re.fullmatch(r"[A-Za-z0-9@._-]{3,80}", b["gmodel"]):
+                r["gmodel"] = b["gmodel"]
             if b.get("model") in MODELS and b["model"] != r.get("model"):
                 r["model"] = b["model"]
                 restart = c.running() and not c.busy
@@ -758,8 +861,8 @@ def register(app):
         c = _conv(b.get("id", ""))
         if not c or not text:
             return jsonify({"error": "no such conversation" if not c else "empty"}), 400
-        ok = c.send(text)
-        return jsonify({"ok": ok, **c.state()})
+        ok = c.send(text, b.get("files") or None)
+        return jsonify({"ok": ok, **c.state(), **({"error": c.error} if not ok and c.error else {})})
 
     @app.post("/api/capi/turn")
     def capi_turn():

@@ -1,6 +1,6 @@
 {
-  "version": 23,
-  "updated_at": "2026-11-18T19:00:00+0100",
+  "version": 24,
+  "updated_at": "2026-11-18T20:00:00+0100",
   "log": [
     {
       "version": 1,
@@ -161,6 +161,18 @@
       "files": [
         "mac_app/app/Capi.swift",
         "mac_app/app/App.swift"
+      ]
+    },
+    {
+      "version": 24,
+      "timestamp": "2026-11-18T20:00:00+0100",
+      "message": "v24: third provider GOOGLE CLOUD (Gemini API + Claude on Vertex AI, free credit), paperclip / drop / paste file picker with chips, files to Gemini and Claude",
+      "files": [
+        "qwen_app/gcloud_chat.py",
+        "qwen_app/capi_chat.py",
+        "mac_app/app/Capi.swift",
+        "mac_app/app/App.swift",
+        "queen_skills/google-cloud-provider.md"
       ]
     }
   ]

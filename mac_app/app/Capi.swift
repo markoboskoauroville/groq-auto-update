@@ -5,10 +5,19 @@
 import SwiftUI
 import AppKit
 import Foundation
+import UniformTypeIdentifiers
 
 struct ProviderItem: Identifiable, Equatable {
     let id: String
     let name: String
+}
+
+/// v24: a file waiting in the input box (a chip) until SEND.
+struct Attach: Identifiable, Equatable {
+    let id = UUID()
+    let name: String
+    let mime: String
+    let data: Data
 }
 
 struct FolderItem: Identifiable, Equatable {
@@ -47,7 +56,13 @@ final class Capi: ObservableObject {
     @Published var keyNote = ""                  // "API key loaded (…abcd)" after the gear
     @Published var provider = "anthropic"        // v17: the radio at the top (anthropic | oxyy), kept by the server
     @Published var providerName = "Anthropic"
-    @Published var providers: [ProviderItem] = [ProviderItem(id: "anthropic", name: "Anthropic"), ProviderItem(id: "oxyy", name: "Oxyy")]
+    @Published var providers: [ProviderItem] = [ProviderItem(id: "anthropic", name: "Anthropic"), ProviderItem(id: "oxyy", name: "Oxyy"), ProviderItem(id: "gcloud", name: "Google Cloud")]
+    @Published var attachments: [Attach] = []    // v24: files and images chosen / dropped / pasted, sent with the next prompt
+    @Published var gmodel = ""                   // v24: the model of the Google Cloud provider (Gemini or claude-...@...)
+    @Published var gGemini: [String] = []
+    @Published var gClaude: [String] = []
+    @Published var gDefault = ""
+    static let maxFile = 20 * 1024 * 1024
     @Published var creditNote = ""
     private var poller: Task<Void, Never>?
     private var shownSig = ""                    // what is on screen: count + last text, so a poll redraws only on change
@@ -68,6 +83,12 @@ final class Capi: ObservableObject {
     @MainActor
     func begin() async {
         await loadCredit()
+        if gGemini.isEmpty, let j = await Queen.shared.json("/api/capi/gcloud_models", timeout: 25) {
+            gGemini = (j["gemini"] as? [String]) ?? []
+            gClaude = (j["claude"] as? [String]) ?? []
+            gDefault = (j["default"] as? String) ?? ""
+            if gmodel.isEmpty { gmodel = gDefault }
+        }
         if folders.isEmpty, let j = await Queen.shared.json("/api/capi/folders"), let l = j["folders"] as? [[String: Any]] {
             folders = l.compactMap { f in
                 guard let n = f["name"] as? String, let p = f["path"] as? String else { return nil }
@@ -173,17 +194,19 @@ final class Capi: ObservableObject {
         convId = id
         title = (room["title"] as? String) ?? "CAPI chat"
         model = (room["model"] as? String) ?? model
+        if let g = room["gmodel"] as? String, !g.isEmpty { gmodel = g } else if gmodel.isEmpty { gmodel = gDefault }
         cwd = (room["cwd"] as? String) ?? cwd
         total = (room["total"] as? Double) ?? 0
         busy = (j["busy"] as? Bool) ?? false
         running = (j["running"] as? Bool) ?? false
         let e = (j["error"] as? String) ?? ""
-        notice = e.isEmpty ? "" : (e == "stopped" ? "Stopped." : "ERROR: " + e)
+        notice = e.isEmpty ? "" : (e == "stopped" ? "Stopped." : Capi.line(e))
         if force || sig != shownSig {
             shownSig = sig
             messages = ms.compactMap { m in
                 guard let r = m["role"] as? String else { return nil }
-                return Msg(role: r, content: (m["text"] as? String) ?? "", cost: (m["cost"] as? Double) ?? 0,
+                let att = (m["files"] as? [String]) ?? []
+                return Msg(role: r, content: ((m["text"] as? String) ?? "") + (att.isEmpty ? "" : "\n\n[attached: " + att.joined(separator: ", ") + "]"), cost: (m["cost"] as? Double) ?? 0,
                            status: (m["status"] as? String) ?? "", reason: (m["reason"] as? String) ?? "")
             }
         }
@@ -212,15 +235,54 @@ final class Capi: ObservableObject {
         await loadConvs()
     }
 
+    /// One plain line for a failure: Google Cloud's own sentences stand alone, other errors keep the ERROR prefix.
+    static func line(_ e: String) -> String {
+        (e.hasPrefix("Claude on Google Cloud") || e.contains("limit is 20 MB") || e.contains("not supported")) ? e : "ERROR: " + e
+    }
+
     @MainActor
     func setModel(_ m: String) { model = m; saveSettings() }
+
+    @MainActor
+    func setGModel(_ m: String) { gmodel = m; saveSettings() }
+
+    // v24: the file picker (paperclip), drag and drop, paste. Max 20 MB each; chips show them until SEND.
+    @MainActor
+    func addURLs(_ urls: [URL]) {
+        for u in urls {
+            let size = (try? u.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+            if size > Capi.maxFile {
+                notice = String(format: "%@ is %.1f MB: the limit is 20 MB per file.", u.lastPathComponent, Double(size) / 1_048_576)
+                continue
+            }
+            guard let d = try? Data(contentsOf: u) else { notice = "\(u.lastPathComponent) could not be read."; continue }
+            let mime = UTType(filenameExtension: u.pathExtension.lowercased())?.preferredMIMEType ?? "application/octet-stream"
+            attachments.append(Attach(name: u.lastPathComponent, mime: mime, data: d))
+        }
+    }
+
+    @MainActor
+    func addImage(_ png: Data) {
+        if png.count > Capi.maxFile { notice = "The pasted image is over 20 MB: the limit is 20 MB per file."; return }
+        let f = DateFormatter(); f.dateFormat = "HHmmss"
+        attachments.append(Attach(name: "pasted-" + f.string(from: Date()) + ".png", mime: "image/png", data: png))
+    }
+
+    @MainActor
+    func pickFiles() {
+        let p = NSOpenPanel()
+        p.title = "Files to send with your message"
+        p.allowsMultipleSelection = true
+        p.canChooseDirectories = false
+        if p.runModal() == .OK { addURLs(p.urls) }
+    }
 
     @MainActor
     func setFolder(_ p: String) { cwd = p; saveSettings() }
 
     @MainActor
     private func saveSettings() {
-        let body: [String: Any] = ["id": convId, "model": model, "cwd": cwd]
+        let body: [String: Any] = ["id": convId, "model": model, "cwd": cwd, "gmodel": gmodel]
         Task { @MainActor in
             guard let j = await Queen.shared.json("/api/capi/settings", body: body) else { return }
             apply(j, force: true)
@@ -231,15 +293,19 @@ final class Capi: ObservableObject {
     /// Send: the server writes it to the conversation's own process (started if it was not); the answer lands in its file.
     @MainActor
     func send(_ text: String) {
-        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !busy, !convId.isEmpty, !t.isEmpty else { return }
-        messages.append(Msg(role: "marko", content: t, status: "sent"))
+        var t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !busy, !convId.isEmpty, !(t.isEmpty && attachments.isEmpty) else { return }
+        if t.isEmpty { t = "Please look at the attached file(s)." }
+        let files: [[String: String]] = attachments.map { ["name": $0.name, "mime": $0.mime, "b64": $0.data.base64EncodedString()] }
+        let names = attachments.map { $0.name }
+        attachments = []
+        messages.append(Msg(role: "marko", content: t + (names.isEmpty ? "" : "\n\n[attached: " + names.joined(separator: ", ") + "]"), status: "sent"))
         busy = true
         notice = ""
         let id = convId
         Task { @MainActor in
-            let j = await Queen.shared.json("/api/capi/send", body: ["id": id, "text": t], timeout: 60)
-            if let e = j?["error"] as? String, !e.isEmpty, id == self.convId { self.notice = "ERROR: " + e }
+            let j = await Queen.shared.json("/api/capi/send", body: ["id": id, "text": t, "files": files], timeout: 180)
+            if let e = j?["error"] as? String, !e.isEmpty, id == self.convId { self.notice = Capi.line(e) }
             await self.loadConvs()
             if id == self.convId { await self.reload() }
         }
@@ -441,6 +507,24 @@ struct CapiPane: View {
     }
 }
 
+/// v24: a text view that takes pasted images and files as chips; pasted text goes in as before.
+final class PasteView: NSTextView {
+    var onPasteFiles: (([URL]) -> Void)?
+    var onPasteImage: ((Data) -> Void)?
+    override func paste(_ sender: Any?) {
+        let pb = NSPasteboard.general
+        if let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
+            onPasteFiles?(urls); return
+        }
+        if pb.string(forType: .string) == nil,
+           let tiff = pb.data(forType: .tiff) ?? pb.data(forType: .png),
+           let rep = NSBitmapImageRep(data: tiff), let png = rep.representation(using: .png, properties: [:]) {
+            onPasteImage?(png); return
+        }
+        super.paste(sender)
+    }
+}
+
 /// An unlimited text box: NSTextView in an NSScrollView (no character or line cap), visible scroll bar when the text is longer
 /// than the box, Return sends, Shift+Return (or Option+Return) is a new line.
 struct PromptEditor: NSViewRepresentable {
@@ -457,7 +541,9 @@ struct PromptEditor: NSViewRepresentable {
         sv.autohidesScrollers = true
         sv.scrollerStyle = .legacy            // a visible bar whenever the text overflows the box
         sv.borderType = .noBorder
-        let tv = NSTextView()
+        let tv = PasteView()
+        tv.onPasteFiles = { urls in Task { @MainActor in Capi.shared.addURLs(urls) } }
+        tv.onPasteImage = { d in Task { @MainActor in Capi.shared.addImage(d) } }
         tv.delegate = context.coordinator
         tv.isRichText = false
         tv.allowsUndo = true
@@ -547,22 +633,67 @@ struct CapiInput: View {
             ZStack(alignment: .topLeading) {
                 PromptEditor(text: $text, onSend: { go() }, focusTick: tick)
                 if text.isEmpty {
-                    Text("Write to Claude Code (API credit)").font(.system(size: 14)).foregroundStyle(Ink.dim)
+                    Text(c.provider == "gcloud" ? "Write to Google Cloud (free credit); attach files with the paperclip" : "Write to Claude Code (API credit)").font(.system(size: 14)).foregroundStyle(Ink.dim)
                         .padding(.horizontal, 8).padding(.vertical, 6).allowsHitTesting(false)
                 }
             }
             .frame(height: min(height, maxH))
             .background(RoundedRectangle(cornerRadius: 6).fill(Ink.panel))
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Ink.line, lineWidth: 1))
+            .onDrop(of: [UTType.fileURL], isTargeted: nil) { provs in
+                for p in provs {
+                    _ = p.loadObject(ofClass: URL.self) { url, _ in
+                        if let url = url { Task { @MainActor in Capi.shared.addURLs([url]) } }
+                    }
+                }
+                return true
+            }
+            if !c.attachments.isEmpty {
+                FlowLayout(spacing: 6, rowSpacing: 4) {
+                    ForEach(c.attachments) { a in
+                        Text("\(a.name) \(a.data.count / 1024) KB  ✕").unit()
+                            .foregroundStyle(Ink.text)
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Ink.panel))
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Ink.line, lineWidth: 1))
+                            .contentShape(Rectangle())
+                            .onTapGesture { c.attachments.removeAll { $0.id == a.id } }
+                            .axButton("Remove " + a.name, id: "capi-chip-" + a.name) { c.attachments.removeAll { $0.id == a.id } }
+                            .help("Click to remove this file from the message")
+                    }
+                }
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
             FlowLayout(spacing: 4, rowSpacing: 0) {
+                Text(Image(systemName: "paperclip"))             // v24: the file picker (also drag and drop, and paste)
+                    .font(.system(size: 14, weight: .regular)).foregroundStyle(c.attachments.isEmpty ? Ink.text : Ink.accent)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .contentShape(Rectangle())
+                    .onTapGesture { c.pickFiles() }
+                    .axButton("Attach files", id: "capi-attach") { c.pickFiles() }
+                    .pressHover()
+                    .help("Attach images, PDFs, text or code (up to 20 MB each); you can also drop or paste them here")
                 Text("MODEL").foregroundStyle(Ink.dim).unit().padding(.horizontal, 6)
-                ForEach(Triple.models, id: \.self) { m in
-                    Word(text: Triple.short(m), id: "capi-model-" + m, color: c.model == m ? Ink.claude : Ink.grey, help: m) { c.setModel(m) }
+                if c.provider == "gcloud" {
+                    Menu {
+                        Section("Gemini") { ForEach(c.gGemini, id: \.self) { m in Button(m) { c.setGModel(m) } } }
+                        Section("Claude on Google Cloud") { ForEach(c.gClaude, id: \.self) { m in Button(m) { c.setGModel(m) } } }
+                    } label: {
+                        Text(c.gmodel.isEmpty ? "…" : c.gmodel).foregroundStyle(Ink.claude).unit()
+                    }
+                    .menuStyle(.borderlessButton).fixedSize()
+                    .accessibilityIdentifier("capi-gmodel")
+                    .help("Gemini models are listed live; Claude on Google Cloud needs Anthropic's access and a gcloud sign-in")
+                } else {
+                    ForEach(Triple.models, id: \.self) { m in
+                        Word(text: Triple.short(m), id: "capi-model-" + m, color: c.model == m ? Ink.claude : Ink.grey, help: m) { c.setModel(m) }
+                    }
                 }
                 if c.busy {
                     Word(text: "STOP", id: "capi-stop", color: Ink.amber, help: "Stop this chat's process (the history stays)") { c.stop() }
                 } else {
-                    let has = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    let has = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !c.attachments.isEmpty
                     Word(text: "SEND", id: "capi-send", color: has ? Ink.accent : Ink.grey, help: "Send to Claude Code (Return)") { go() }
                 }
             }
@@ -575,7 +706,7 @@ struct CapiInput: View {
 
     func go() {
         let s = text
-        guard !c.busy, !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard !c.busy, !(s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && c.attachments.isEmpty) else { return }
         text = ""
         c.send(s)
     }
