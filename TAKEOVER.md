@@ -1,4 +1,4 @@
-## Groq-free runtime migration (19.11.2026): implementation in progress
+## Groq-free runtime migration (19.11.2026): v31 released; Mac update pending
 
 The active runtime is being moved from the legacy Groq chat server to a Swift-owned local API and a standalone Python backend.
 Swift serves `127.0.0.1:8765`; `~/.queen/queen-backend` runs the Python API on 8766. The active Python app registers CAPI,
@@ -28,9 +28,15 @@ The skill can load local audio into an empty session slot or onto a new arrangem
 and set their parameters within reported ranges. It does not load third-party plugins or automate Live's menus. In
 particular, Live's Separate Stems command has no AbletonOSC address, so it remains unsupported by this OSC-only skill.
 
-Validation completed locally: Swift app compilation, Swift API/proxy tests, Python backend tests, CAPI feature tests, and
-`git diff --check`. The app/runtime changes are uncommitted and have not been released or installed. Before release, run the
-full installer gate, verify the built app and Python runtime together, and update this section with the resulting release state.
+Validation: `test_queen_backend.py`, `test_capi_features.py`, `test_pair_chat.py`, `test_ableton_skill.py`, `mac_app/test.sh`,
+and `git diff --check` pass locally. GitHub run 44547780527 passed version parity, Swift tests, build, package, and release;
+Queen v31 is published at https://github.com/markoboskoauroville/groq_ai_studio/releases/tag/v31.
+
+The installed `/Applications/Queen.app` still reports bundle version 30 and runs `GroqAIStudio`. The local endpoints report
+the legacy `groq-modern-chat` service despite the v31 version file, so the new Swift/Python runtime is not confirmed active.
+The requested Macro Recorder-driven app update was not run; no Queen-update action was in the catalogue. The v31 app has not
+been installed locally. After it is active, verify `/api/capi/capabilities` and `/api/ableton/capabilities`, then continue
+the five-song stress test and PDF regeneration/visual review.
 
 ## v30 (19.11.2026): CAPI-first release candidate
 
