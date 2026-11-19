@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+HOME_DIR="${HOME}/.queen"
+exec "${HOME_DIR}/venv/bin/python" "${HOME_DIR}/backend/queen_backend.py"

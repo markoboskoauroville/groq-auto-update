@@ -38,7 +38,9 @@ from pathlib import Path
 
 from flask import Response, jsonify, request
 
-ROOT = Path.home() / ".groq" / "capi"
+from state_paths import QUEEN_HOME
+
+ROOT = QUEEN_HOME / "capi"
 MODELS = ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-2"]
 DEFAULT_MODEL = "claude-sonnet-5-5"
 DEFAULT_CWD = str(Path.home() / "Developer" / "claude-code")
@@ -121,14 +123,14 @@ def _queen_on(room):
 #             the credit is a local ledger from a starting balance Marko enters; Oxyy bills Claude at 40% of Anthropic's list
 #             price (60% off), so the Claude Code cost is multiplied by OXYY_FACTOR (an estimate).
 PROVIDERS = {
-    "anthropic": {"name": "Anthropic", "key_file": Path.home() / ".groq" / "capi_key", "name_hint": "100dolara",
+    "anthropic": {"name": "Anthropic", "key_file": QUEEN_HOME / "capi_key", "name_hint": "100dolara",
                   "base_url": "", "factor": 1.0},
-    "oxyy": {"name": "Oxyy", "key_file": Path.home() / ".groq" / "capi_key_oxyy", "name_hint": "oxyy",
+    "oxyy": {"name": "Oxyy", "key_file": QUEEN_HOME / "capi_key_oxyy", "name_hint": "oxyy",
              "base_url": "https://api.oxyy.ai", "factor": 0.4},
 }
 PROVIDERS["gcloud"] = {"name": "Google Cloud", "key_file": None, "name_hint": "CGP_free_credits", "base_url": "", "factor": 1.0}
-PROVIDER_FILE = Path.home() / ".groq" / "capi_provider.json"
-OXYY_BALANCE = Path.home() / ".groq" / "capi_oxyy_balance.json"      # {"start_usd": 5.0, "at": epoch}
+PROVIDER_FILE = QUEEN_HOME / "capi_provider.json"
+OXYY_BALANCE = QUEEN_HOME / "capi_oxyy_balance.json"      # {"start_usd": 5.0, "at": epoch}
 OXYY_LEDGER = Path.home() / ".cache" / "oxyy-ledger.jsonl"
 KEY_FILE = PROVIDERS["anthropic"]["key_file"]      # the gear's key (0600, never printed, never in git)
 
@@ -315,6 +317,26 @@ class Conv:
         with self.lock:
             self.room["updated"] = _now()
             _save(self.room)
+
+    def complete_local_skill(self, text, result):
+        """Persist a predefined Python skill result without starting an external model."""
+        with self.lock:
+            self.room["messages"].append({"role": "marko", "text": text, "status": "done"})
+            if self.room.get("title") in ("CAPI chat", "", None):
+                self.room["title"] = text.splitlines()[0][:48] or "CAPI chat"
+            self.room["messages"].append({
+                "role": "tool",
+                "text": f"PYTHON skill {result.skill_id}",
+            })
+            self.room["messages"].append({
+                "role": "claude",
+                "text": result.answer,
+                "cost": 0.0,
+                "model": "python",
+                "label": f"PYTHON · {result.skill_id}",
+            })
+            self.error = ""
+            self.save()
 
     def running(self):
         g = getattr(self, "gthread", None)
@@ -1128,6 +1150,12 @@ def register(app):
                 c.save()
         with c.lock:
             router_on = bool(c.room.get("router_on", False))
+        if not b.get("files"):
+            from queen_python_skills import dispatch
+            result = dispatch(text, {"cwd": c.room.get("cwd", "")})
+            if result is not None:
+                c.complete_local_skill(text, result)
+                return jsonify({"ok": True, **c.state(), "local_skill": result.skill_id})
         route = None
         if router_on:
             import pair_chat

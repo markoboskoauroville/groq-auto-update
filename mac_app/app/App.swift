@@ -1,5 +1,5 @@
 // Queen: Queen herself on the Mac. Since v5 (Phase A, 14.11.2026) this app serves 127.0.0.1:8765
-// (core/QueenServer.swift) and starts the Python server as its internal backend on 8766 for the routes not moved yet.
+// (core/QueenServer.swift) and starts the Python CAPI/skills backend on 8766.
 // Marko, 14.11.2026: "now it is time to convert our Grok AI Studio into a Swift app. Please do that and upgrade it with new
 // skills for accessibility". Swift only, no web view (MANTRA_MANIFEST swift-apps.md); compiled only by GitHub (build.yml).
 // The window: the house top row (ON OFF · name · TOP PERMISSIONS ✕), Queen's status line, the conversation, one input and
@@ -8,7 +8,7 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 
-let VERSION = 30
+let VERSION = 31
 let APP_NAME = "Queen"
 
 enum Ink {
@@ -21,8 +21,8 @@ enum Ink {
     static let green = Color(red: 0.30, green: 0.85, blue: 0.45)
     static let amber = Color(red: 1.0, green: 0.70, blue: 0.15)
     static let red = Color(red: 1.0, green: 0.35, blue: 0.30)
-    static let accent = Color(red: 0.96, green: 0.45, blue: 0.20)   // Groq orange
-    static let claude = Color(red: 0.55, green: 0.65, blue: 1.0)    // Claude's voice in the triple chat
+    static let accent = Color(red: 0.96, green: 0.45, blue: 0.20)
+    static let claude = Color(red: 0.55, green: 0.65, blue: 1.0)
 }
 
 // every word that acts is an Accessibility button with a label and an identifier (swift-apps.md, 31.10.2026)
@@ -178,7 +178,7 @@ struct StatusLine: View {
                     .pipeGroup()
             }
             if (!q.up || !q.backend) && !q.starting {
-                Word(text: "START QUEEN", id: "start-queen", color: Ink.amber, help: "Start Queen's backend again (~/.groq/qwen on 8766)") {
+                Word(text: "START QUEEN", id: "start-queen", color: Ink.amber, help: "Start Queen's Python backend again (~/.queen/queen-backend on 8766)") {
                     q.startServer()
                 }.pipeGroup().flowRight()
             }
@@ -204,41 +204,10 @@ struct StatusLine: View {
 
     var statusParts: [String] {
         guard q.up else { return ["Queen \(q.line)".replacingOccurrences(of: " ", with: "\u{00A0}")] }
-        var parts = ["Queen"]
-        if !q.model.isEmpty { parts.append(q.model) }
-        parts.append("keys \(q.keys)" + (q.cooling > 0 ? " (\(q.cooling) cooling)" : ""))
-        parts.append(String(format: "spent $%.4f", q.spent))
+        var parts = ["Queen", "Python skills", "external CAPI"]
         if !q.backend { parts.append("backend 8766 down") }
-        if cp.active { parts.append(cp.queenOn ? "Queen allowed in this chat" : "Queen bypassed · not trained") }
+        if cp.active { parts.append(cp.providerName) }
         return parts.map { $0.replacingOccurrences(of: " ", with: "\u{00A0}") }
-    }
-}
-
-// ---------------------------------------------------------------- chats
-struct ChatList: View {
-    @ObservedObject var q = Queen.shared
-    var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(q.chats) { c in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(c.title).font(.system(size: 13, weight: c.id == q.chatId ? .bold : .regular))
-                            .foregroundStyle(c.id == q.chatId ? Ink.accent : Ink.text)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text("\(c.count) messages · \(String(c.updated.prefix(16)).replacingOccurrences(of: "T", with: " "))")
-                            .font(.system(size: 11, design: .monospaced)).foregroundStyle(Ink.dim).unit()
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .contentShape(Rectangle())
-                    .onTapGesture { Task { await q.open(c.id) } }
-                    .axButton("Chat " + c.title, id: "chat-" + c.id) { Task { await q.open(c.id) } }
-                    .pressHover()
-                    Hairline()
-                }
-            }
-        }
-        .background(Ink.panel)
     }
 }
 
@@ -295,7 +264,7 @@ struct Bubble: View {
         }
     }
 
-    // the roles of the one-to-one chat (user / assistant) and the speakers of the triple chat (marko / queen / claude)
+    // CAPI roles are user, assistant, and tool.
     static func isMine(_ r: String) -> Bool { r == "user" || r == "marko" }
     static func label(_ r: String) -> String { isMine(r) ? "YOU" : (r == "claude" ? "CLAUDE" : (r == "master" ? "MASTER" : (r == "slave" ? "SLAVE" : "QUEEN"))) }
     static func color(_ r: String) -> Color {
@@ -372,50 +341,6 @@ struct MessageList<Extra: View>: View {
             .onChange(of: messages) { _ in proxy.scrollTo("end", anchor: .bottom) }
             .onChange(of: trigger) { _ in proxy.scrollTo("end", anchor: .bottom) }
         }
-    }
-}
-
-struct Conversation: View {
-    @ObservedObject var q = Queen.shared
-    var body: some View {
-        MessageList(messages: q.messages,
-                    empty: "Ask Queen anything. She also reads apps through Accessibility: try \"check my last 5 WhatsApp messages\".") { EmptyView() }
-    }
-}
-
-struct InputRow: View {
-    @ObservedObject var q = Queen.shared
-    @State private var text = ""
-    @FocusState private var focused: Bool
-    var body: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            TextField("Write to Queen", text: $text, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 14))
-                .foregroundStyle(Ink.text)
-                .lineLimit(1...8)
-                .focused($focused)
-                .onSubmit { go() }
-                .padding(10)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Ink.panel))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Ink.line, lineWidth: 1))
-                .accessibilityIdentifier("prompt")
-            Word(text: q.busy ? "STOP" : "SEND", id: q.busy ? "stop" : "send",
-                 color: q.busy ? Ink.amber : (q.up ? Ink.accent : Ink.grey),
-                 help: q.busy ? "Stop her answer" : "Send to Queen (Return)") {
-                if q.busy { q.stop() } else { go() }
-            }
-            .font(.system(size: 13, weight: .bold, design: .monospaced))
-        }
-        .padding(12)
-        .onAppear { focused = true }
-    }
-
-    func go() {
-        let t = text
-        guard !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !q.busy else { return }
-        text = ""
-        q.send(t)
     }
 }
 
@@ -515,7 +440,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
         QueenHost.shared.start(appVersion: VERSION)     // Phase A: Queen's server is this app (8765), Python is its backend (8766)
         Queen.shared.start()
         DispatchQueue.main.async {
-            for w in NSApp.windows where w.title.hasPrefix("Queen") { w.setFrameAutosaveName("GroqAIStudioMain") }
+            for w in NSApp.windows where w.title.hasPrefix("Queen") { w.setFrameAutosaveName("QueenMain") }
         }
         Updater.checkAtStart()
     }
@@ -523,7 +448,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct GroqAIStudioApp: App {
+struct QueenApp: App {
     @NSApplicationDelegateAdaptor(Delegate.self) var delegate
     var body: some Scene {
         Window(APP_NAME, id: "main") {

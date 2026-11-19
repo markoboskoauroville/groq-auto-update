@@ -11,6 +11,8 @@ import capi_model_router as Router
 import capi_chat as C
 import gcloud_chat as G
 import gemini_hands as H
+import queen_python_skills as PythonSkills
+from queen_python_skills import ableton as Ableton
 import pair_chat
 from flask import Flask
 from unittest.mock import patch
@@ -83,6 +85,17 @@ try:
 except ValueError:
     invalid_choice_rejection = True
 check("router rejects non-object choice", invalid_choice_rejection)
+local_help = PythonSkills.dispatch("  LIST   SKILLS ")
+check("known local skill matches without a model", local_help is not None and local_help.skill_id == "list-skills")
+current_folder = PythonSkills.dispatch("what folder is open", {"cwd": "/tmp/project"})
+check("local folder skill uses chat context",
+      current_folder is not None and current_folder.answer.endswith("/tmp/project"))
+check("unknown local skill falls through to CAPI", PythonSkills.dispatch("summarize an attached recording") is None)
+with patch.object(Ableton, "execute_text", return_value="Mock Ableton state"):
+    ableton_skill = PythonSkills.dispatch("ABLETON: status")
+check("Ableton command dispatches to the provider-independent Python skill",
+      ableton_skill is not None and ableton_skill.skill_id == "ableton-control"
+      and ableton_skill.answer == "Mock Ableton state")
 judge_prompt = Router._judge_prompt("Summarize this.", catalog, [
     {"name": "voice.wav", "mime": "audio/wav", "b64": "secret-payload"},
 ])
@@ -127,6 +140,11 @@ class FakeConv:
         return {"running": False, "busy": False, "error": ""}
 
 
+class FakeLocalConv(FakeConv):
+    def complete_local_skill(self, text, result):
+        self.local_skill = (text, result.skill_id, result.answer)
+
+
 fake_conv = FakeConv()
 routed_choice = {"provider": "gcloud", "model": "capable", "reason": "Needs stronger reasoning.",
                  "judge_model": "cheap", "router_cost_usd": 0.000123, "catalog": ["cheap", "capable"]}
@@ -141,6 +159,26 @@ check("send routes with attachment metadata and includes judge cost",
       route_response["route"]["model"] == "capable"
       and fake_conv.room["total"] == 0.000123
       and choose.call_args.args[2][0]["name"] == "voice.wav")
+
+local_conv = FakeLocalConv()
+with patch.object(C, "_conv", return_value=local_conv), \
+     patch.object(Router, "choose", side_effect=AssertionError("local skills must not call the model router")):
+    local_response = client.post("/api/capi/send", json={
+        "id": "local-skill-test", "text": "list skills", "router": True,
+    }).get_json()
+check("known skill bypasses the model router", local_response["ok"]
+      and local_response["local_skill"] == "list-skills"
+      and local_conv.local_skill[1] == "list-skills")
+
+with patch.object(Ableton, "execute_text", return_value="Ableton status confirmed"), \
+     patch.object(C, "_conv", return_value=local_conv), \
+     patch.object(Router, "choose", side_effect=AssertionError("Ableton skills must not call the model router")):
+    ableton_response = client.post("/api/capi/send", json={
+        "id": "local-skill-test", "text": "ABLETON: status", "router": True,
+    }).get_json()
+check("Ableton actions bypass every selected model and the model router",
+      ableton_response["ok"] and ableton_response["local_skill"] == "ableton-control"
+      and local_conv.local_skill[2] == "Ableton status confirmed")
 
 old_call = H._call_with_recovery
 old_cost = H._usage_cost

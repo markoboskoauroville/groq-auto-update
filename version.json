@@ -1,6 +1,6 @@
 {
-  "version": 30,
-  "updated_at": "2026-11-19T10:36:48+0100",
+  "version": 31,
+  "updated_at": "2026-11-19T12:32:05+0100",
   "log": [
     {
       "version": 1,
@@ -273,6 +273,33 @@
         "TAKEOVER.md",
         "LESSONS.md",
         "install.sh",
+        "version.json"
+      ]
+    },
+    {
+      "version": 31,
+      "timestamp": "2026-11-19T12:32:05+0100",
+      "message": "v31: replace the active Groq runtime with Swift API hosting, external CAPI, and deterministic Python skills",
+      "files": [
+        "mac_app/app/App.swift",
+        "mac_app/app/Capi.swift",
+        "mac_app/app/Queen.swift",
+        "mac_app/app/core/Host.swift",
+        "mac_app/app/core/QueenServer.swift",
+        "mac_app/build.sh",
+        "mac_app/test.sh",
+        "mac_app/tests/main.swift",
+        "qwen_app/app.py",
+        "qwen_app/auto_updater.py",
+        "qwen_app/capi_chat.py",
+        "qwen_app/queen_backend.py",
+        "qwen_app/queen_python_skills/__init__.py",
+        "qwen_app/state_paths.py",
+        "install.sh",
+        "requirements.txt",
+        "README.md",
+        "TAKEOVER.md",
+        "LESSONS.md",
         "version.json"
       ]
     }

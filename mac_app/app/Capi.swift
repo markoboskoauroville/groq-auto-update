@@ -38,6 +38,10 @@ struct ConvMeta: Identifiable, Equatable {
 
 final class Capi: ObservableObject {
     static let shared = Capi()
+    static let models = ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-2"]
+    static func shortModel(_ model: String) -> String {
+        (model.split(separator: "-").dropFirst().first.map(String.init) ?? model).uppercased()
+    }
 
     @Published var active = false
     @Published var convId = ""
@@ -90,7 +94,6 @@ final class Capi: ObservableObject {
     func toggle() {
         active.toggle()
         if active {
-            Triple.shared.active = false
             Task { await begin() }
         }
     }
@@ -617,7 +620,7 @@ struct CapiHeader: View {
                     .foregroundStyle(Ink.dim).unit()
                 Word(text: c.queenOn ? "QUEEN: ON" : "QUEEN: OFF", id: "capi-queen", color: c.queenOn ? Ink.amber : Ink.green,
                      help: c.queenOn ? "Queen may use this chat (her capi skill). Click to bypass her again."
-                                     : "Queen is bypassed in this chat: no Queen prompt, no Groq, nothing recorded for her training, her capi skill refused. Click to allow her.") { c.setQueen(!c.queenOn) }
+                                     : "Queen is bypassed in this chat: no internal model or training. Click to allow her CAPI skill.") { c.setQueen(!c.queenOn) }
                 if !c.keyNote.isEmpty {
                     Text(c.keyNote.replacingOccurrences(of: " ", with: "\u{00A0}"))
                         .foregroundStyle(c.keyNote.hasPrefix("API key loaded") ? Ink.green : Ink.red).unit()
@@ -903,8 +906,8 @@ struct CapiInput: View {
                     .accessibilityIdentifier("capi-gmodel")
                     .help("Gemini models, listed live from Google; paid from the free credit")
                 } else {
-                    ForEach(Triple.models, id: \.self) { m in
-                        Word(text: Triple.short(m), id: "capi-model-" + m, color: c.model == m ? Ink.claude : Ink.grey, help: m) { c.setModel(m) }
+                    ForEach(Capi.models, id: \.self) { m in
+                        Word(text: Capi.shortModel(m), id: "capi-model-" + m, color: c.model == m ? Ink.claude : Ink.grey, help: m) { c.setModel(m) }
                     }
                 }
                 Word(text: c.routerOn ? "ROUTER ON" : "ROUTER OFF", id: "capi-router",

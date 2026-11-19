@@ -1,3 +1,37 @@
+## Groq-free runtime migration (19.11.2026): implementation in progress
+
+The active runtime is being moved from the legacy Groq chat server to a Swift-owned local API and a standalone Python backend.
+Swift serves `127.0.0.1:8765`; `~/.queen/queen-backend` runs the Python API on 8766. The active Python app registers CAPI,
+the deterministic Python skill catalog, and Auto Update. It does not import the retired application module, expose the legacy
+`/api/chat` or key-manager APIs, or install the Groq SDK. CAPI remains the external-provider path for unmatched prompts.
+
+State migration copies selected CAPI/provider and Google/Anthropic updater state from `~/.groq` to `~/.queen` on backend
+startup; it leaves the old directory untouched and excludes legacy model keys. Migration is explicit at runtime startup,
+not a module-import side effect.
+
+The local Python skill package implements `list-skills`, `current-folder`, and `ableton-control`. Ableton uses the same
+provider-independent Python dispatcher for every selected model; its typed OSC API is documented in `CAPI_PYTHON_API.md`.
+Every Ableton action uses Macro Recorder's takeover guard. Android-emulator actions and the `filestamp` audio-recording
+command remain unconverted. Triple Chat and the old Swift Groq client have been removed from the active app build. Legacy
+Python sources remain in the repository but are neither copied by the installer nor imported by the new runtime.
+
+## Ableton Live control skill
+
+The local skill sends only typed, allowlisted commands through `ABLETON_LIVE_ACTIONS/helpers/liveosc.py` to AbletonOSC.
+The common interface is `GET /api/ableton/capabilities` plus `POST /api/ableton/action`; CAPI also accepts deterministic
+commands such as `ABLETON: status`, `ABLETON: set tempo 120`, and `ABLETON: mute track 1` before any model routing.
+Track, scene, device, and parameter numbers are one-based at the Queen API boundary. Actions show the Macro Recorder
+notice “Queen is taking over Ableton Live”; TAKE OVER stops further OSC messages. Setters read their values back where
+AbletonOSC exposes a query. Fire/stop orders without acknowledgements are reported as sent, not verified.
+
+The skill can load local audio into an empty session slot or onto a new arrangement track, inspect already-loaded devices,
+and set their parameters within reported ranges. It does not load third-party plugins or automate Live's menus. In
+particular, Live's Separate Stems command has no AbletonOSC address, so it remains unsupported by this OSC-only skill.
+
+Validation completed locally: Swift app compilation, Swift API/proxy tests, Python backend tests, CAPI feature tests, and
+`git diff --check`. The app/runtime changes are uncommitted and have not been released or installed. Before release, run the
+full installer gate, verify the built app and Python runtime together, and update this section with the resulting release state.
+
 ## v30 (19.11.2026): CAPI-first release candidate
 
 The Swift status line now has only two top-level choices: CAPI first and AUTO UPDATE last. TRIPLE, CHATS, and NEW CHAT were removed from that line; CAPI retains its own saved-chat list and NEW CHAT control. The prior tab is remembered, with older saved modes opening CAPI by default.

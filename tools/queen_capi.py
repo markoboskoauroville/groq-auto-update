@@ -60,7 +60,7 @@ def attachment(path: str | os.PathLike[str]) -> dict[str, str]:
 class QueenCAPI:
     def __init__(self, base_url: str = "http://127.0.0.1:8765", token_file: str | os.PathLike[str] | None = None):
         self.base_url = base_url.rstrip("/")
-        self.token_file = Path(token_file or Path.home() / ".groq" / "api_token").expanduser()
+        self.token_file = Path(token_file or Path.home() / ".queen" / "api_token").expanduser()
 
     def _request(
         self,
@@ -106,6 +106,25 @@ class QueenCAPI:
 
     def capabilities(self) -> dict[str, Any]:
         return self._request("GET", "/api/capi/capabilities")
+
+    def ableton_capabilities(self) -> dict[str, Any]:
+        return self._request("GET", "/api/ableton/capabilities")
+
+    def ableton_action(
+        self,
+        action: str,
+        arguments: dict[str, Any] | None = None,
+        timeout: float = 60,
+    ) -> dict[str, Any]:
+        result = self._request(
+            "POST",
+            "/api/ableton/action",
+            {"action": action, "arguments": arguments or {}},
+            timeout=timeout,
+        )
+        if result.get("ok") is False:
+            raise QueenAPIError(str(result.get("error") or "Queen did not complete the Ableton action."))
+        return result
 
     def list_chats(self) -> dict[str, Any]:
         return self._request("GET", "/api/capi/list")
@@ -205,6 +224,10 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     for name in ("health", "capabilities", "list"):
         sub.add_parser(name)
+    sub.add_parser("ableton-capabilities")
+    action_parser = sub.add_parser("ableton-action")
+    action_parser.add_argument("action")
+    action_parser.add_argument("--arguments", default="{}")
     get_parser = sub.add_parser("get")
     get_parser.add_argument("chat_id")
     new_parser = sub.add_parser("new")
@@ -230,6 +253,16 @@ def main() -> int:
             result = client.health()
         elif args.command == "capabilities":
             result = client.capabilities()
+        elif args.command == "ableton-capabilities":
+            result = client.ableton_capabilities()
+        elif args.command == "ableton-action":
+            try:
+                arguments = json.loads(args.arguments)
+            except json.JSONDecodeError as exc:
+                raise QueenAPIError(f"--arguments must be valid JSON: {exc.msg}") from exc
+            if not isinstance(arguments, dict):
+                raise QueenAPIError("--arguments must decode to a JSON object")
+            result = client.ableton_action(args.action, arguments)
         elif args.command == "list":
             result = client.list_chats()
         elif args.command == "get":

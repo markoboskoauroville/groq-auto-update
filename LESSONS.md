@@ -1,3 +1,13 @@
+## 19.11.2026: Groq-free runtime migration
+
+- Keep the retired model runtime out of the app build and installer; a compatibility launcher should import only the new
+  runtime. A 404 from an unregistered legacy route is preferable to a success-shaped stub.
+- Run the `~/.groq` to `~/.queen` data migration only when the runtime starts, not when modules are imported. Tests that import
+  the Flask app must use temporary state paths so they cannot read or migrate the user's real state.
+- Preserve external CAPI/updater state selectively, set copied key files to mode 0600, and never delete the old directory as
+  part of migration.
+- SwiftUI builds separately from Python tests. Run both the Swift app compile and the local proxy tests before a release.
+
 ## v30 (19.11.2026)
 - The router must receive attachment metadata to assess a file-oriented task, but never the base64/file contents; its response must be a JSON object selecting only a catalog model.
 - Count the router judge in the chat total as well as the provider ledger, retaining enough decimal places for a small judge call to remain visible.

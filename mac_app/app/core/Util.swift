@@ -2,18 +2,13 @@
 import Foundation
 import CryptoKit
 
-/// Everything the server needs to know about where it lives. The app uses `.standard`; the tests build their own
-/// (a temporary ~/.groq, a fake Groq, a fake backend, a fake claude).
+/// Everything the server needs to know about where it lives.
 struct QueenConfig {
-    var groqDir: String                 // ~/.groq: keys.txt, key_state.json, spend_ledger.json, chats/, approvals/, training/
+    var dataDir: String                 // ~/.queen: CAPI chats, provider keys, updater state, and backend files
     var userHome: String                // ~ (for ~/.claude, ~/.local/bin/claude, ~/Developer/claude-code/tools, ~/.config)
-    var groqBase = "https://api.groq.com/openai/v1"
     var defaultBackendPort: UInt16 = 8766
-    var bundledPrompt: String? = nil    // queen_prompt.json in the app bundle (fallback when the helper cannot run)
-    var promptHelper: String? = nil     // gen_prompt.py in the app bundle
-    var appPy: String? = nil            // ~/.groq/qwen_app/app.py (the source of the prompt)
     var python: String? = nil           // a python3 for the helpers
-    var skillsDir: String? = nil        // default ~/.groq/queen_skills
+    var skillsDir: String? = nil        // default ~/.queen/queen_skills
     var claudeBin: String? = nil        // default ~/.local/bin/claude
     var hubTools: String? = nil         // default ~/Developer/claude-code/tools
     var location = ProcessInfo.processInfo.environment["QUEEN_LOCATION"] ?? "mac"
@@ -23,39 +18,35 @@ struct QueenConfig {
 
     static var standard: QueenConfig {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        var c = QueenConfig(groqDir: home + "/.groq", userHome: home)
-        c.bundledPrompt = Bundle.main.path(forResource: "queen_prompt", ofType: "json")
-        c.promptHelper = Bundle.main.path(forResource: "gen_prompt", ofType: "py")
-        return c
+        return QueenConfig(dataDir: home + "/.queen", userHome: home)
     }
 
-    var skills: String { skillsDir ?? groqDir + "/queen_skills" }
+    var skills: String { skillsDir ?? dataDir + "/queen_skills" }
     var claude: String { claudeBin ?? userHome + "/.local/bin/claude" }
     var hub: String { hubTools ?? userHome + "/Developer/claude-code/tools" }
-    var sourceAppPy: String { appPy ?? groqDir + "/qwen_app/app.py" }
     var pythonExe: String {
         if let p = python { return p }
-        let venv = groqDir + "/venv/bin/python"
+        let venv = dataDir + "/venv/bin/python"
         return FileManager.default.isExecutableFile(atPath: venv) ? venv : "/usr/bin/python3"
     }
 
-    /// The port of the Python backend: ~/.groq/backend_port (written by app.py with QWEN_BACKEND=1), else 8766.
+    /// The port of the Python backend: ~/.queen/backend_port, else 8766.
     var backendPort: UInt16 {
-        if let s = try? String(contentsOfFile: groqDir + "/backend_port", encoding: .utf8),
+        if let s = try? String(contentsOfFile: dataDir + "/backend_port", encoding: .utf8),
            let p = UInt16(s.trimmingCharacters(in: .whitespacesAndNewlines)), p > 0 { return p }
         return defaultBackendPort
     }
 
-    /// version.json the way app.py finds it: the source repo when it is a git checkout, else ~/.groq.
+    /// version.json from the source checkout when available, else the installed Queen directory.
     var versionFile: String {
         let dev = userHome + "/Developer/groq_ai_studio"
         if FileManager.default.fileExists(atPath: dev + "/.git") { return dev + "/version.json" }
-        return groqDir + "/version.json"
+        return dataDir + "/version.json"
     }
 
     /// The whole PATH a Mac app does not have (it starts with /usr/bin:/bin only).
     var fullPath: String {
-        [groqDir, userHome + "/.local/bin", userHome + "/.pyenv/shims", "/opt/homebrew/bin", "/usr/local/bin",
+        [dataDir, userHome + "/.local/bin", userHome + "/.pyenv/shims", "/opt/homebrew/bin", "/usr/local/bin",
          "/usr/bin", "/bin", "/usr/sbin", "/sbin"].joined(separator: ":")
     }
 }
@@ -189,11 +180,11 @@ func runProcess(_ exe: String, _ args: [String], env: [String: String]? = nil, c
                       err: String(decoding: ed, as: UTF8.self), timedOut: timedOut)
 }
 
-// ---------------------------------------------------------------- the local API token (~/.groq/api_token)
+// ---------------------------------------------------------------- the local API token (~/.queen/api_token)
 enum LocalToken {
-    /// The same file and rules as app.py ensure_local_api_token(): 48 hex characters, 0600, never logged.
+    /// A 48-character token, 0600, never logged.
     static func ensure(_ cfg: QueenConfig) -> String {
-        let p = cfg.groqDir + "/api_token"
+        let p = cfg.dataDir + "/api_token"
         if let t = Files.read(p)?.trimmingCharacters(in: .whitespacesAndNewlines), t.count >= 24 { return t }
         let t = randomHex(48)
         if Files.writeAtomic(p, Data((t + "\n").utf8), privateFile: true) { return t }

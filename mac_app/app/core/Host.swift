@@ -1,9 +1,9 @@
 // Host.swift: the Swift app as Queen's host (Phase A, 14.11.2026).
 // 1. Serves 127.0.0.1:8765 itself (QueenServer). If an OLD Python Queen holds 8765 (its /api/app/status has no "face"),
 //    she is asked to stop (SIGTERM to her pid) and the port is taken; another Swift Queen there is left alone.
-// 2. Starts the Python backend as its child: ~/.groq/qwen with QWEN_BACKEND=1 GROQ_PORT=8766 (no web page, internal).
+// 2. Starts the Groq-free Python backend as its child: ~/.queen/queen-backend on 8766.
 // 3. Watches it every 5 s; after 3 failed checks it is started again (at most once every 20 s). OFF stops it.
-// 4. Writes ~/.groq/active_port = 8765 and app_url = http://127.0.0.1:8765, so every caller keeps the same address.
+// 4. Writes ~/.queen/active_port = 8765 and app_url = http://127.0.0.1:8765, so every caller keeps the same address.
 import Foundation
 
 final class QueenHost {
@@ -15,7 +15,7 @@ final class QueenHost {
     private(set) var line = "starting"
     private var child: Process?
     private var lastStart: Double = 0
-    private var fails = 0
+    private var fails = 1
     private var timer: DispatchSourceTimer?
     private let lock = NSLock()
     var port: UInt16 = 8765
@@ -67,14 +67,15 @@ final class QueenHost {
     }
 
     private func writeAddress() {
-        Files.writeAtomic(cfg.groqDir + "/active_port", Data("\(port)".utf8))
-        Files.writeAtomic(cfg.groqDir + "/app_url", Data("http://127.0.0.1:\(port)".utf8))
+        Files.writeAtomic(cfg.dataDir + "/active_port", Data("\(port)".utf8))
+        Files.writeAtomic(cfg.dataDir + "/app_url", Data("http://127.0.0.1:\(port)".utf8))
     }
 
     // ------------------------------------------------------------ the backend (Python, 8766)
     func backendHealthy() -> Bool {
         guard let r = LocalHTTP.call(port: cfg.backendPort, method: "GET", path: "/health", timeout: 4) else { return false }
         return r.status == 200 && (r.json["ok"] as? Bool) == true
+            && (r.json["app"] as? String) == "Queen Python skills"
     }
 
     func backendInfo() -> [String: Any] {
@@ -86,7 +87,10 @@ final class QueenHost {
     var backendUp: Bool { lock.lock(); defer { lock.unlock() }; return fails == 0 }
 
     private func ensureBackend() {
-        if backendHealthy() { return }
+        if backendHealthy() {
+            lock.lock(); fails = 0; lock.unlock()
+            return
+        }
         startBackend()
     }
 
@@ -99,7 +103,7 @@ final class QueenHost {
         lock.unlock()
         if ok {
             // an old launcher may have written its own address over ours: 8765 is the address of Queen
-            if Files.read(cfg.groqDir + "/app_url") != "http://127.0.0.1:\(port)" && serving { writeAddress() }
+            if Files.read(cfg.dataDir + "/app_url") != "http://127.0.0.1:\(port)" && serving { writeAddress() }
             return
         }
         if f >= 3 && !running { startBackend() }
@@ -108,6 +112,7 @@ final class QueenHost {
     /// START QUEEN: the backend now (also when it runs: it is restarted).
     func restartBackend() {
         stopBackend()
+        lock.lock(); fails = 1; lock.unlock()
         lastStart = 0
         startBackend()
     }
@@ -116,20 +121,19 @@ final class QueenHost {
         lock.lock(); defer { lock.unlock() }
         if Clock.now - lastStart < 20 { return }
         lastStart = Clock.now
-        let qwen = cfg.groqDir + "/qwen"
-        guard FileManager.default.isExecutableFile(atPath: qwen) else {
-            line = "backend not installed (~/.groq/qwen missing: run install.sh in groq_ai_studio)"
+        let executable = cfg.dataDir + "/queen-backend"
+        guard FileManager.default.isExecutableFile(atPath: executable) else {
+            line = "backend not installed (~/.queen/queen-backend missing: run install.sh in groq_ai_studio)"
             return
         }
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: qwen)
+        p.executableURL = URL(fileURLWithPath: executable)
         var env = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("CLAUDE") }
-        env["QWEN_BACKEND"] = "1"
-        env["GROQ_PORT"] = "\(cfg.defaultBackendPort)"
-        env["QWEN_NO_BROWSER"] = "1"
+        env["QUEEN_BACKEND"] = "1"
+        env["QUEEN_PORT"] = "\(cfg.defaultBackendPort)"
         env["PATH"] = cfg.fullPath
         p.environment = env
-        let logPath = cfg.groqDir + "/qwen_backend.log"
+        let logPath = cfg.dataDir + "/backend.log"
         if !FileManager.default.fileExists(atPath: logPath) { FileManager.default.createFile(atPath: logPath, contents: nil) }
         if let log = FileHandle(forWritingAtPath: logPath) {
             log.seekToEndOfFile()
@@ -140,7 +144,6 @@ final class QueenHost {
         do {
             try p.run()
             child = p
-            fails = 0
         } catch {
             line = "backend could not start: \(error.localizedDescription)"
         }

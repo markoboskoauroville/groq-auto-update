@@ -9,20 +9,17 @@ NAME="Queen"
 DISPLAY="Queen"
 APP="build/$NAME.app"
 rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-swiftc -O -swift-version 5 -parse-as-library -o "$APP/Contents/MacOS/GroqAIStudio" app/*.swift app/core/*.swift
-# Phase A: Queen's system prompt comes from app.py (helper in the bundle, run on the installed app.py; this copy is the fallback)
-python3 tools/gen_prompt.py ../qwen_app/app.py > "$APP/Contents/Resources/queen_prompt.json"
-cp tools/gen_prompt.py "$APP/Contents/Resources/gen_prompt.py"
+swiftc -O -swift-version 5 -parse-as-library -o "$APP/Contents/MacOS/Queen" app/*.swift app/core/*.swift
 swiftc -O -swift-version 5 -o "$APP/Contents/MacOS/axread" axread/main.swift
-[ -x "$APP/Contents/MacOS/GroqAIStudio" ] && [ -x "$APP/Contents/MacOS/axread" ] || { echo "the app did not build"; exit 1; }
+[ -x "$APP/Contents/MacOS/Queen" ] && [ -x "$APP/Contents/MacOS/axread" ] || { echo "the app did not build"; exit 1; }
 cat > "$APP/Contents/Info.plist" <<PL
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleName</key><string>$DISPLAY</string>
 <key>CFBundleDisplayName</key><string>$DISPLAY</string>
-<key>CFBundleIdentifier</key><string>community.auroville.groqaistudio</string>
-<key>CFBundleExecutable</key><string>GroqAIStudio</string>
+<key>CFBundleIdentifier</key><string>community.auroville.queen</string>
+<key>CFBundleExecutable</key><string>Queen</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>$V</string>
 <key>CFBundleVersion</key><string>$V</string>

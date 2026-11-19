@@ -1,12 +1,12 @@
-"""Queen (`qwen`) — Dual-Kind API Loader & Pre-Briefed Surgical Auto-Update Engine.
+"""Queen — external-provider key loader and supervised surgical auto-update engine.
 
 Supports:
-1. Noise-tolerant multi-provider key extraction (Kind 1: Groq `gsk_...`, Kind 2: Google Cloud/Gemini `AIza...` & Anthropic Claude `sk-ant-...`).
-2. Secure `0600` key & provider/model configuration persistence in `~/.groq/auto_update_keys.json` (masked in all API responses).
+1. Noise-tolerant extraction of Google Cloud/Gemini and Anthropic Claude keys.
+2. Secure `0600` key & provider/model configuration persistence in `~/.queen/auto_update_keys.json` (masked in all API responses).
 3. Live model catalog discovery + exact per-1M USD token pricing for Google & Anthropic.
 4. Pre-briefed surgical context slicing so external APIs update Queen in pennies via `<queen_update>` JSON patches (`replace`, `insert_after`, `insert_before`).
 5. End-to-end 6-stage educational pipeline ("Learning by Watching"):
-   Repo check/clone/pull -> Streaming model plan -> Surgical patch + unified diff -> CI validation (`ci_run_all`) -> Backup + Git push (origin & auto-update) + local `~/.groq` sync -> Exact USD cost receipt printed in terminal & split-screen UI.
+   Repo check/clone/pull -> Streaming model plan -> Surgical patch + unified diff -> CI validation -> Backup + Git push (origin & auto-update) + local `~/.queen` sync -> Exact USD cost receipt.
 """
 from __future__ import annotations
 
@@ -24,7 +24,8 @@ from typing import Any, Callable
 
 import httpx
 
-HOME = Path.home() / ".groq"
+from state_paths import QUEEN_HOME
+HOME = QUEEN_HOME
 AUTO_UPDATE_KEYS_FILE = HOME / "auto_update_keys.json"
 AUTO_UPDATE_LEDGER_FILE = HOME / "auto_update_ledger.json"
 DOWNLOADS_API_DIR = Path.home() / "Downloads" / "API"
@@ -34,10 +35,10 @@ MIRROR_GITHUB_REPO = "markoboskoauroville/groq-auto-update"
 DEV_REPO_DEFAULT = Path.home() / "Developer" / "groq_ai_studio"
 
 # Regex extractors (compiled without literal secret prefixes that look like real keys)
-RE_GROQ_KEY = re.compile(r"\bgsk_[A-Za-z0-9_-]{20,}\b")
 RE_ANTHROPIC_KEY = re.compile(r"\bsk-ant-[A-Za-z0-9_-]{20,}\b")
 RE_GOOGLE_KEY = re.compile(r"\b(?:AIza[0-9A-Za-z_-]{20,}|AQ\.[A-Za-z0-9_.-]{20,})\b")
 RE_GCLOUD_BEARER = re.compile(r"\bya29\.[0-9A-Za-z._-]{30,}\b")
+RE_RETIRED_KEY = re.compile(r"\bgsk_[A-Za-z0-9_-]{20,}\b")
 
 # Curated models per provider (ordered best surgical default first — Pro + Flash/Fast models)
 CURATED_PROVIDER_MODELS: dict[str, list[dict[str, Any]]] = {
@@ -133,14 +134,14 @@ EDUCATIONAL_STAGES = [
     {
         "stage": 5,
         "id": "deploy_sync",
-        "title": "5. Backup, Dual-Remote Git Push & Local `~/.groq` Sync",
-        "lesson": "Once CI passes, we snapshot a rollback backup, write to the git repo, bump `version.json`, sync the installed runtime in `~/.groq`, and push to GitHub (`origin` + `auto-update`).",
+        "title": "5. Backup, Git Push & Local `~/.queen` Sync",
+        "lesson": "Once CI passes, we snapshot a rollback backup, write to the git repo, bump `version.json`, sync the installed runtime in `~/.queen`, and push to GitHub.",
     },
     {
         "stage": 6,
         "id": "cost_complete",
         "title": "6. Exact Token Accounting & USD Cost Receipt",
-        "lesson": "Production systems meter every API call. We read exact input/output/cached token counts from the provider stream and log the USD cost in `~/.groq/auto_update_ledger.json`.",
+        "lesson": "Production systems meter every API call. We read exact input/output/cached token counts from the provider stream and log the USD cost in `~/.queen/auto_update_ledger.json`.",
     },
 ]
 
@@ -179,7 +180,7 @@ def redact_secrets(text: str) -> str:
     """Scrub any accidental raw key pattern from error/log strings."""
     if not text:
         return ""
-    out = RE_GROQ_KEY.sub(lambda m: mask_secret(m.group(0)), text)
+    out = RE_RETIRED_KEY.sub(lambda m: mask_secret(m.group(0)), text)
     out = RE_ANTHROPIC_KEY.sub(lambda m: mask_secret(m.group(0)), out)
     out = RE_GOOGLE_KEY.sub(lambda m: mask_secret(m.group(0)), out)
     out = RE_GCLOUD_BEARER.sub("ya29.…REDACTED", out)
@@ -187,9 +188,9 @@ def redact_secrets(text: str) -> str:
 
 
 def extract_multi_provider_keys(raw_text: str) -> dict[str, list[str]]:
-    """Extract Kind 1 (`groq`) and Kind 2 (`google`, `anthropic`) keys from any noisy text."""
+    """Extract supported Google and Anthropic keys from noisy text."""
     if not raw_text:
-        return {"groq": [], "anthropic": [], "google": []}
+        return {"anthropic": [], "google": []}
 
     def _dedupe(items: list[str]) -> list[str]:
         seen: set[str] = set()
@@ -201,11 +202,9 @@ def extract_multi_provider_keys(raw_text: str) -> dict[str, list[str]]:
                 res.append(cleaned)
         return res
 
-    groq_keys = _dedupe(RE_GROQ_KEY.findall(raw_text))
     anthropic_keys = _dedupe(RE_ANTHROPIC_KEY.findall(raw_text))
     google_keys = _dedupe(RE_GOOGLE_KEY.findall(raw_text) + RE_GCLOUD_BEARER.findall(raw_text))
     return {
-        "groq": groq_keys,
         "anthropic": anthropic_keys,
         "google": google_keys,
     }
@@ -248,7 +247,7 @@ def load_auto_update_store(path: Path = AUTO_UPDATE_KEYS_FILE) -> dict[str, Any]
 
 
 def save_auto_update_store(cfg: dict[str, Any], path: Path = AUTO_UPDATE_KEYS_FILE) -> None:
-    """Atomically write `~/.groq/auto_update_keys.json` with mode `0600`."""
+    """Atomically write `~/.queen/auto_update_keys.json` with mode `0600`."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.stem}.{os.getpid()}.{int(time.time()*1000000)}.tmp")
     tmp.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
@@ -259,11 +258,11 @@ def save_auto_update_store(cfg: dict[str, Any], path: Path = AUTO_UPDATE_KEYS_FI
 def get_public_auto_update_config(
     flask_port: int = 8765,
     app_version: str = "v4",
-    groq_key_count: int = 0,
-    store_path: Path = AUTO_UPDATE_KEYS_FILE,
+    store_path: Path | None = None,
+    ledger_path: Path | None = None,
 ) -> dict[str, Any]:
     """Return masked, UI-safe configuration for both API kinds + Flask status."""
-    cfg = load_auto_update_store(store_path)
+    cfg = load_auto_update_store(store_path or AUTO_UPDATE_KEYS_FILE)
     provider = cfg["active_provider"]
     active_model = cfg["active_models"].get(provider) or CURATED_PROVIDER_MODELS[provider][0]["id"]
 
@@ -279,7 +278,7 @@ def get_public_auto_update_config(
                 "auth_type": "oauth_bearer" if k.startswith("ya29.") else "api_key",
             })
 
-    ledger = load_auto_update_ledger()
+    ledger = load_auto_update_ledger(ledger_path or AUTO_UPDATE_LEDGER_FILE)
     return {
         "ok": True,
         "active_provider": provider,
@@ -302,12 +301,6 @@ def get_public_auto_update_config(
                 "items": masked_keys["anthropic"],
                 "models": CURATED_PROVIDER_MODELS["anthropic"],
             },
-        },
-        "groq_chat_api": {
-            "kind": "groq",
-            "name": "Groq LPU Chat API",
-            "configured": groq_key_count > 0,
-            "count": groq_key_count,
         },
         "pricing_per_1m_usd": {
             m: {"input": r[0], "output": r[1], "cache_write": r[2], "cache_read": r[3]}
@@ -354,7 +347,7 @@ def add_auto_update_keys(
     extracted: dict[str, list[str]],
     store_path: Path = AUTO_UPDATE_KEYS_FILE,
 ) -> dict[str, int]:
-    """Store extracted Google and Anthropic keys into `~/.groq/auto_update_keys.json`."""
+    """Store extracted Google and Anthropic keys into `~/.queen/auto_update_keys.json`."""
     added_counts = {"google": 0, "anthropic": 0}
     with _STATE_LOCK:
         cfg = load_auto_update_store(store_path)
@@ -401,18 +394,16 @@ def delete_auto_update_key(
 
 def discover_keys_from_downloads(
     api_dir: Path = DOWNLOADS_API_DIR,
-    groq_pool: Any = None,
     store_path: Path = AUTO_UPDATE_KEYS_FILE,
 ) -> dict[str, Any]:
-    """Scan `~/Downloads/API/` for Groq, Google Gemini, and Anthropic Claude key files safely."""
+    """Scan `~/Downloads/API/` for Google Gemini and Anthropic Claude key files safely."""
     candidate_files = [
-        "groq-api.txt",
         "gemini_key.txt",
         "VOICES_gemini-free-tier-api.txt",
         "Claude.api.txt",
         "HAIKU-KEY.txt",
     ]
-    combined_extracted: dict[str, list[str]] = {"groq": [], "anthropic": [], "google": []}
+    combined_extracted: dict[str, list[str]] = {"anthropic": [], "google": []}
     scanned: list[str] = []
 
     if api_dir.is_dir():
@@ -422,7 +413,7 @@ def discover_keys_from_downloads(
                 try:
                     txt = fpath.read_text(encoding="utf-8", errors="replace")
                     ext = extract_multi_provider_keys(txt)
-                    for k_type in ("groq", "anthropic", "google"):
+                    for k_type in ("anthropic", "google"):
                         for k in ext[k_type]:
                             if k not in combined_extracted[k_type]:
                                 combined_extracted[k_type].append(k)
@@ -430,21 +421,15 @@ def discover_keys_from_downloads(
                 except Exception:
                     pass
 
-    groq_added = 0
-    if groq_pool is not None and combined_extracted["groq"]:
-        groq_added, _ = groq_pool.add_keys(combined_extracted["groq"])
-
     au_added = add_auto_update_keys(combined_extracted, store_path=store_path)
     return {
         "ok": True,
         "scanned_files": scanned,
         "added": {
-            "groq": groq_added,
             "google": au_added["google"],
             "anthropic": au_added["anthropic"],
         },
         "found_totals": {
-            "groq": len(combined_extracted["groq"]),
             "google": len(combined_extracted["google"]),
             "anthropic": len(combined_extracted["anthropic"]),
         },
@@ -716,7 +701,7 @@ def build_surgical_context(
     keywords = [
         w.lower()
         for w in re.findall(r"[A-Za-z0-9_#-]{3,}", instruction)
-        if w.lower() not in {"the", "and", "for", "with", "into", "from", "that", "this", "add", "please", "update", "make", "app", "queen", "groq"}
+        if w.lower() not in {"the", "and", "for", "with", "into", "from", "that", "this", "add", "please", "update", "make", "app", "queen"}
     ]
 
     blocks: list[str] = []
@@ -739,7 +724,7 @@ def build_surgical_context(
         anchor_seeds = hit_indices[:10]
         low_inst = instruction.lower()
         if fname == "index.html":
-            want_sidebar = any(w in low_inst for w in ("sidebar", "column", "left", "tab", "conversation", "groq studio", "tester", "filter", "repo", "full-screen", "fullscreen", "panel", "load key", "workspace", "developer"))
+            want_sidebar = any(w in low_inst for w in ("sidebar", "column", "left", "tab", "conversation", "queen", "tester", "filter", "repo", "full-screen", "fullscreen", "panel", "load key", "workspace", "developer"))
             for i, line in enumerate(lines):
                 if 'id="topbar"' in line or 'id="status-bar"' in line or "//  INIT" in line:
                     anchor_seeds.append(i)
@@ -825,16 +810,16 @@ def build_surgical_context(
 
 
 SURGICAL_SYSTEM_PROMPT = """You are Queen's Principal Auto-Update Software Engineer.
-You are updating Groq AI Studio ("Queen" / `qwen`), a local macOS Flask + single-file HTML/JS application:
+You are updating Queen's Python runtime and deterministic skills:
 - Primary GitHub repo: `markoboskoauroville/groq_ai_studio` (local checkout `~/Developer/groq_ai_studio`)
 - Auto-update mirror repo: `markoboskoauroville/groq-auto-update`
-- Installed runtime: `~/.groq` (`qwen_app/app.py`, `qwen_app/auto_updater.py`, `qwen_app/index.html`)
+- Installed runtime: `~/.queen/backend` (`queen_backend.py`, `auto_updater.py`, `queen_python_skills/`)
 
 CRITICAL EFFICIENCY & SAFETY RULES:
 1. NEVER rewrite whole files! Output ONLY surgical patches (`replace`, `insert_after`, or `insert_before`).
 2. Every `search` string MUST match verbatim lines copied directly from the `--- <file> lines X-Y (exact verbatim text) ---` blocks (including indentation). NEVER guess unseen function bodies! Keep `search` compact (3 to 12 lines) and unique.
 3. NEVER emit two overlapping edits on the same function or region! Make ONE clean edit per function/section so an earlier edit never invalidates a later edit's `search` anchor.
-4. Preserve valid Python 3 AST syntax in `.py` files (`import httpx` or stdlib only; `load_auto_update_store` and `mask_secret` are importable from `auto_updater`, and `pool` is the global `DynamicKeyPool` in `app.py`) and balanced tags + balanced `{}` braces inside `<script>` in `index.html`.
+4. Preserve valid Python 3 AST syntax in `.py` files (`import httpx` or stdlib only; `load_auto_update_store` and `mask_secret` are importable from `auto_updater`).
 4. NEVER output fake keys or raw secret literals (`gsk_...`, `sk-ant-...`, `AIza...`, `AQ....`). Always mask keys (`mask_secret(k)` or `k[:6] + "…" + k[-4:]`).
 5. Wrap your final response inside `<queen_update>` and `</queen_update>` tags containing strictly valid JSON with this exact schema:
 
@@ -1268,17 +1253,25 @@ def ensure_local_repo_ready(git_root: Path, git_run_fn: Callable[[list[str]], tu
 
 
 def sync_local_installation(git_root: Path, installed_home: Path = HOME) -> list[str]:
-    """Copy updated source files into `~/.groq` immediately so local runtime stays in sync."""
+    """Copy the Groq-free Python runtime into `~/.queen/backend` immediately."""
     logs: list[str] = []
-    qwen_dst = installed_home / "qwen_app"
-    qwen_dst.mkdir(parents=True, exist_ok=True)
-    for rel in ("qwen_app/app.py", "qwen_app/auto_updater.py", "qwen_app/index.html"):
-        src = git_root / rel
-        dst = installed_home / rel
+    backend_dst = installed_home / "backend"
+    backend_dst.mkdir(parents=True, exist_ok=True)
+    for rel in ("queen_backend.py", "auto_updater.py", "capi_chat.py", "state_paths.py"):
+        src = git_root / "qwen_app" / rel
+        dst = backend_dst / rel
         if src.is_file() and src.resolve() != dst.resolve():
             shutil.copy2(str(src), str(dst))
             logs.append(f"Synced {rel} -> {dst}")
-    for root_f in ("version.json", "groq_pool.py"):
+    src_skills = git_root / "qwen_app" / "queen_python_skills"
+    dst_skills = backend_dst / "queen_python_skills"
+    if src_skills.is_dir():
+        dst_skills.mkdir(parents=True, exist_ok=True)
+        for src in src_skills.glob("*.py"):
+            dst = dst_skills / src.name
+            shutil.copy2(str(src), str(dst))
+            logs.append(f"Synced queen_python_skills/{src.name} -> {dst}")
+    for root_f in ("version.json",):
         src = git_root / root_f
         dst = installed_home / root_f
         if src.is_file() and src.resolve() != dst.resolve():
@@ -1579,7 +1572,7 @@ def run_surgical_auto_update(
             all_ci_errors = []
             for fname, new_code in changed_files.items():
                 leaked = extract_multi_provider_keys(new_code)
-                if leaked["groq"] or leaked["anthropic"] or leaked["google"]:
+                if RE_RETIRED_KEY.search(new_code) or leaked["anthropic"] or leaked["google"]:
                     all_ci_errors.append(f"{fname}: SECURITY BLOCK — raw API key detected in generated code")
                 passed, errs = ci_run_all_fn(new_code, fname)
                 ci_report[fname] = {"passed": passed, "errors": errs, "bytes": len(new_code.encode("utf-8"))}
@@ -1632,14 +1625,14 @@ def run_surgical_auto_update(
         emit("ci_result", stage=4, passed=True, errors=[], report=ci_report, working_on="CI Gate PASSED ✓")
         term_print_fn("  \033[1;32m[Stage 4 · CI]\033[0m AST & HTML structural validation PASSED ✓")
 
-        # ── STAGE 5: Backup, Write, Version Bump, Git Push & Local `~/.groq` Sync ──
+        # ── STAGE 5: Backup, Write, Version Bump, Git Push & Local `~/.queen` Sync ──
         emit(
             "stage",
             stage=5,
             status="active",
             title=EDUCATIONAL_STAGES[4]["title"],
             lesson=EDUCATIONAL_STAGES[4]["lesson"],
-            working_on="Dry-run verification complete (skipping disk write)" if dry_run else "Backing up, writing files, pushing to GitHub & syncing ~/.groq…",
+            working_on="Dry-run verification complete (skipping disk write)" if dry_run else "Backing up, writing files, pushing to GitHub & syncing ~/.queen…",
         )
 
         backups_created: list[str] = []
@@ -1683,7 +1676,7 @@ def run_surgical_auto_update(
             backups=backups_created,
             git_logs=git_logs,
             sync_logs=sync_logs,
-            working_on=f"Deployed {final_version_str} to repo & ~/.groq" if not dry_run else "Dry-run verified",
+            working_on=f"Deployed {final_version_str} to repo & ~/.queen" if not dry_run else "Dry-run verified",
         )
 
         # ── STAGE 6: Exact USD Cost Receipt & Completion ──

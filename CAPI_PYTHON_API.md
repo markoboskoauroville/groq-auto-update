@@ -1,6 +1,6 @@
 # Queen CAPI Python API
 
-Queen's Swift app serves the local API at `http://127.0.0.1:8765`. Its Python backend supplies the `/api/capi/*` routes. The supported client is [tools/queen_capi.py](./tools/queen_capi.py); it uses only Python's standard library and reads the optional local API token from `~/.groq/api_token` without printing it.
+Queen's Swift app serves the local API at `http://127.0.0.1:8765`. Its Python backend supplies the `/api/capi/*` routes. The supported client is [tools/queen_capi.py](./tools/queen_capi.py); it uses only Python's standard library and reads the optional local API token from `~/.queen/api_token` without printing it.
 
 ## Use the client
 
@@ -41,3 +41,26 @@ python3 tools/queen_capi.py send CHAT_ID "Run the focused tests" --wait
 - The separate Auto Update tab uses `/api/auto_update/*`. Its current surgical-patch allowlist is backend-only (`qwen_app/app.py`, `qwen_app/index.html`, and `qwen_app/auto_updater.py`); Swift app source is built and released by the GitHub mac-app workflow. A run requires an explicit UI confirmation, and a paid API route requires a separate consent when the backend requests it.
 
 Run the offline client tests with `python3 tools/test_queen_capi.py`; CAPI media/router tests run with `python3 qwen_app/test_capi_features.py`.
+
+## Provider-independent Ableton skill
+
+Every model provider shares the same typed AbletonOSC actions; known CAPI commands run in Python before model routing.
+Each action first shows the Macro Recorder takeover notice and stops if Marko presses TAKE OVER. Read the contract before
+calling an action:
+
+```python
+from tools.queen_capi import QueenCAPI
+
+queen = QueenCAPI()
+print(queen.ableton_capabilities())
+result = queen.ableton_action("set_tempo", {"bpm": 120})
+print(result["confirmed"], result["bpm"])
+```
+
+The matching HTTP routes are `GET /api/ableton/capabilities` and `POST /api/ableton/action`, with
+`{"action":"set_tempo","arguments":{"bpm":120}}` as a request example. Track, scene, device, and parameter numbers are
+one-based; device parameter values must be within the min/max reported by AbletonOSC. Fire/stop messages without a
+readback are explicitly marked unconfirmed. Alternatively, send explicit local CAPI commands such as
+`ABLETON: status`, `ABLETON: create audio track`, or `ABLETON: load audio "/path/to/song.wav" on track 1 scene 1`.
+The skill does not automate menus: Live's Separate Stems action and third-party plugin loading remain unavailable through
+OSC.

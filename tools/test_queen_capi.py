@@ -41,6 +41,23 @@ class CapiClientTests(unittest.TestCase):
         self.assertTrue(payload["router"])
         self.assertEqual(base64.b64decode(payload["files"][0]["b64"]), b"line one")
 
+    def test_ableton_action_uses_shared_structured_endpoint(self):
+        client = QueenCAPI(token_file=Path("/nonexistent/queen-token"))
+        with patch.object(client, "_request", return_value={"ok": True, "confirmed": True}) as request:
+            result = client.ableton_action("set_tempo", {"bpm": 120})
+        self.assertTrue(result["confirmed"])
+        self.assertEqual(request.call_args.args[:2], ("POST", "/api/ableton/action"))
+        self.assertEqual(request.call_args.args[2], {
+            "action": "set_tempo",
+            "arguments": {"bpm": 120},
+        })
+
+    def test_ableton_action_surfaces_backend_failure(self):
+        client = QueenCAPI(token_file=Path("/nonexistent/queen-token"))
+        with patch.object(client, "_request", return_value={"ok": False, "error": "Macro Recorder unavailable"}):
+            with self.assertRaisesRegex(QueenAPIError, "Macro Recorder unavailable"):
+                client.ableton_action("play")
+
     def test_empty_prompt_is_rejected_before_request(self):
         client = QueenCAPI()
         with patch.object(client, "_request") as request:
