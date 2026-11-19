@@ -501,17 +501,31 @@ class Conv:
         self.gthread.start()
         return True
 
+    SOLO_SYS = ("You are Gemini, running through Google Cloud inside Queen's CAPI tab on Marko's Mac. Never call yourself Claude. You have the tools list_files, read_file, write_file and run_shell, confined to the chat's folder. Use them; never say you cannot access the computer or files. Plan, act, test by running, then report the real command output. Never print keys.")
+
     def _gworker(self, model, hist, text, files):
         import gcloud_chat
         _bypass_queen()
         self._mark("received")
-        res = gcloud_chat.run(model, hist, text, files)
+        import gemini_hands as H
+        cwd, _why = H.folder_ok(self.room.get("cwd") or "")
+        if cwd:
+            try:
+                gh = [("user" if r == "marko" else "model", t) for r, t in hist]
+                ans, cost, _n = H.agent_turn(model, self.SOLO_SYS, gh, text, cwd, label="solo gemini")
+                res = {"text": ans, "cost": cost}
+            except Exception as exc:
+                res = {"error": str(exc)}
+        else:
+            res = gcloud_chat.run(model, hist, text, files)
+            if "error" not in res:
+                res["text"] = "No working folder is set for this chat, so I have no hands.\n\n" + res["text"]
         with self.lock:
             if "error" in res:
                 self.error = res["error"]
                 self._mark("failed", res["error"])
             else:
-                self.room["messages"].append({"role": "claude", "text": res["text"], "cost": res["cost"], "model": model})
+                self.room["messages"].append({"role": "claude", "text": res["text"], "cost": res["cost"], "model": model, "who": "GEMINI"})
                 self.room["total"] = round(self.room.get("total", 0.0) + res["cost"], 4)
                 self._mark("done")
             self.busy = False
