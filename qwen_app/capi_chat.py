@@ -856,7 +856,8 @@ def register(app):
     def capi_pair_get():
         import pair_chat
         st = pair_chat.status(_key, PROVIDERS)
-        st["models"] = {"master_hint": "the chat's MODEL (Claude) or Gemini model", "slave": [
+        st["models"] = {"master_hint": "the chat's MODEL (Claude) or Gemini model (gmodel, list: GET /api/capi/gcloud_models)",
+                        "slave": [
             {"id": m, "tier": t, "in": i, "out": o} for m, t, i, o in pair_chat.slave_catalog(st["slave"])]} if st["active"] else {}
         return jsonify(st)
 
@@ -1031,10 +1032,17 @@ def register(app):
         if not text:
             return jsonify({"error": "empty"}), 400
         r = _load(b.get("id", "")) or _new(b.get("cwd"), b.get("model") or "claude-haiku-5-5", queen="on")   # made by her: hers
-        if b.get("gmodel") and not r.get("gmodel"):
+        # The caller may always (re)choose the models of this chat: gmodel = a Google Cloud (Gemini) master's model, model = a Claude
+        # master's model. Before, an existing chat kept its first gmodel and a later one was silently ignored.
+        want_g = b.get("gmodel") if isinstance(b.get("gmodel"), str) and re.fullmatch(r"[A-Za-z0-9@._-]{3,80}", b["gmodel"]) else ""
+        want_m = b.get("model") if b.get("model") in MODELS else ""
+        if (want_g and want_g != r.get("gmodel")) or (want_m and want_m != r.get("model")):
             c0 = _conv(r["id"])
             with c0.lock:
-                c0.room["gmodel"] = str(b["gmodel"])[:80]
+                if want_g:
+                    c0.room["gmodel"] = want_g
+                if want_m:
+                    c0.room["model"] = want_m
                 c0.save()
             r = c0.room
         pair = None

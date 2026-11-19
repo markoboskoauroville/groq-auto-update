@@ -278,12 +278,12 @@ class PairRun:
         hist = [(r, t) for r, t in pr][-12:]
         try:
             if role == "master":
-                ans, cost = H.text_turn(model, sysmsg, hist, prompt, label="pair master")
+                ans, cost = H.text_turn(model, sysmsg, hist, prompt, label="pair master", notice_cb=lambda msg: self._append({"role": "tool", "text": msg}))
             else:
                 def tool_line(line):
                     self._append({"role": "tool", "text": f"{NAMES['gcloud']}: {line}"})
                 budget = lambda: self.left()
-                ans, cost, steps = H.agent_turn(model, sysmsg, hist, prompt, self.c.room["cwd"], on_tool=tool_line,
+                ans, cost, steps = H.agent_turn(model, sysmsg, hist, prompt, self.c.room["cwd"], on_tool=tool_line, notice_cb=lambda msg: self._append({"role": "tool", "text": msg}),
                                                 stop_event=self.stop_event, budget=budget)
         except H.Stopped:
             raise _Stop()
@@ -381,7 +381,7 @@ class PairRun:
             pass
         c, cfg = self.c, self.cfg
         m, s = cfg["master"], cfg["slave"]
-        end, rounds = "", 0
+        end, rounds, mmodel = "", 0, ""
         rec = {"master": m, "slave": s, "rounds": [], "started": time.time()}
         try:
             self.cat = slave_catalog(s)
@@ -463,7 +463,12 @@ class PairRun:
             end = "ERROR: " + str(exc)[:240]
         rec.update({"end": end, "spent": round(self.spent, 6), "master_cost": round(self.by["master"], 6),
                     "slave_cost": round(self.by["slave"], 6)})
-        summary = (f"PAIR {end} | {NAMES[m]} master ${self.by['master']:.4f} | {NAMES[s]} slave ${self.by['slave']:.4f}"
+        smodels = []
+        for r in rec["rounds"]:
+            if r.get("slave_model") and r["slave_model"] not in smodels:
+                smodels.append(r["slave_model"])
+        summary = (f"PAIR {end} | {NAMES[m]} master {mmodel or '?'} ${self.by['master']:.4f}"
+                   f" | {NAMES[s]} slave {' → '.join(smodels) or '?'} ${self.by['slave']:.4f}"
                    f" | total ${self.spent:.4f} of the ${cfg['cap_usd']:.2f} cap")
         with c.lock:
             c.room["messages"].append({"role": "pair", "text": summary, "end": end, "cost": round(self.spent, 6)})

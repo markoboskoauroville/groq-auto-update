@@ -150,6 +150,16 @@ final class Capi: ObservableObject {
         pairNote = (j["note"] as? String) ?? ""
         pairRounds = (j["max_rounds"] as? Int) ?? pairRounds
         pairCap = (j["cap_usd"] as? Double) ?? pairCap
+        // A Google Cloud master needs the Gemini list for its MASTER MODEL menu: if the first load failed, try again now.
+        if pairMaster == "gcloud" && gGemini.isEmpty {
+            Task { @MainActor in
+                if let g = await Queen.shared.json("/api/capi/gcloud_models", timeout: 25) {
+                    gGemini = (g["gemini"] as? [String]) ?? []
+                    gDefault = (g["default"] as? String) ?? gDefault
+                    if gmodel.isEmpty { gmodel = gDefault }
+                }
+            }
+        }
     }
 
     func role(of id: String) -> String { pairMaster == id ? "MASTER" : (pairSlave == id ? "SLAVE" : "OFF") }
@@ -810,7 +820,13 @@ struct CapiInput: View {
                     .help(c.pairActive ? "The master's model; the master chooses the slave's model itself, round by round" : "")
                 if (c.pairActive ? c.pairMaster : c.provider) == "gcloud" {
                     Menu {
-                        Section("Gemini") { ForEach(c.gGemini, id: \.self) { m in Button(m) { c.setGModel(m) } } }
+                        // The list comes newest first. Models newer than Queen's default are lowered into their own section below
+                        // the established ones (the default and everything older), so the new, untried ones are not the first choice.
+                        let cut = c.gGemini.firstIndex(of: c.gDefault) ?? 0
+                        Section("Gemini") { ForEach(Array(c.gGemini[cut...]), id: \.self) { m in Button(m) { c.setGModel(m) } } }
+                        if cut > 0 {
+                            Section("Newer than the default") { ForEach(Array(c.gGemini[..<cut]), id: \.self) { m in Button(m) { c.setGModel(m) } } }
+                        }
                     } label: {
                         Text(c.gmodel.isEmpty ? "…" : c.gmodel).foregroundStyle(Ink.claude).unit()
                     }

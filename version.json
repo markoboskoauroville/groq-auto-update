@@ -1,6 +1,6 @@
 {
-  "version": 26,
-  "updated_at": "2026-11-18T22:30:00+0100",
+  "version": 27,
+  "updated_at": "2026-11-19T05:43:22+0100",
   "log": [
     {
       "version": 1,
@@ -201,6 +201,20 @@
         "mac_app/app/App.swift",
         "mac_app/app/Queen.swift",
         "queen_skills/master-slave.md"
+      ]
+    },
+    {
+      "version": 27,
+      "timestamp": "2026-11-19T05:43:22+0100",
+      "message": "v27: Gemini 404 dead-model recovery (a retired model is replaced by the one the error names, else a same-tier model from ListModels, with a notice line in the chat), a chat's master model/gmodel can be re-chosen later, MASTER MODEL menu retries a failed Gemini list and puts models newer than the default in their own section, the PAIR summary names the master model and the slave model chain, retired gemini-2.5-pro removed from the curated list and prices",
+      "files": [
+        "qwen_app/gemini_hands.py",
+        "qwen_app/pair_chat.py",
+        "qwen_app/capi_chat.py",
+        "qwen_app/auto_updater.py",
+        "mac_app/app/Capi.swift",
+        "mac_app/app/App.swift",
+        "queen_skills/gemini-404-recovery.md"
       ]
     }
   ]

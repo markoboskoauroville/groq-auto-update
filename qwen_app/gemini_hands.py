@@ -18,6 +18,7 @@ calls when STOP is pressed or the pair's cost cap is reached, and a running shel
 Keys come from gcloud_chat._keys() and are never printed.
 """
 from __future__ import annotations
+import re
 
 import os
 import shlex
@@ -189,13 +190,95 @@ def _usage_cost(model, j):
     return G._cost(model, tin, tout)
 
 
-def text_turn(model, system, history, text, label="pair"):
+# 404 dead-model recovery
+_REPLACEMENTS = {}
+_CACHED_MODELS = None
+
+def _find_replacement(old_model, err_text):
+    global _CACHED_MODELS
+    if old_model in _REPLACEMENTS:
+        return _REPLACEMENTS[old_model]
+    
+    # 1. Suggested replacement in error text (e.g. 'models/gemini-3.1-pro-preview')
+    matches = re.findall(r'models/([a-zA-Z0-9_.-]+)', err_text)
+    for target in matches:
+        if target != old_model:
+            _REPLACEMENTS[old_model] = target
+            return target
+
+    # 2. Query ListModels via G.gemini_models()
+    try:
+        if _CACHED_MODELS is None:
+            _CACHED_MODELS = G.gemini_models() or []
+    except Exception:
+        _CACHED_MODELS = []
+
+    candidates = []
+    for item in _CACHED_MODELS:
+        name = item.get('name', '') if isinstance(item, dict) else str(item)
+        mid = name.replace('models/', '')
+        methods = item.get('supportedGenerationMethods', []) if isinstance(item, dict) else ['generateContent']
+        if 'generateContent' in methods and mid != old_model:
+            candidates.append(mid)
+
+    def tier(name):
+        n = name.lower()
+        if 'pro' in n: return 3
+        if 'flash-lite' in n or 'lite' in n: return 1
+        if 'flash' in n: return 2
+        return 0
+
+    old_tier = tier(old_model)
+    same_tier = [c for c in candidates if tier(c) == old_tier]
+    if same_tier:
+        rep = sorted(same_tier)[0]
+        _REPLACEMENTS[old_model] = rep
+        return rep
+
+    for t in range(old_tier - 1, 0, -1):
+        lower = [c for c in candidates if tier(c) == t]
+        if lower:
+            rep = sorted(lower)[0]
+            _REPLACEMENTS[old_model] = rep
+            return rep
+
+    return None
+
+def _call_with_recovery(model, body, timeout=120, notice_cb=None):
+    current = _REPLACEMENTS.get(model, model)
+    try:
+        return _call(current, body, timeout=timeout), current
+    except RuntimeError as exc:
+        msg = str(exc)
+        is_404 = 'Gemini 404' in msg and any(x in msg.lower() for x in ['no longer available', 'not found', 'models/'])
+        if not is_404:
+            raise
+        new_model = _find_replacement(current, msg)
+        if not new_model or new_model == current:
+            raise RuntimeError(f"404: {current} is gone, and no replacement was found ({msg})")
+        notice = f"404: {current} is gone, using {new_model}"
+        print(f"[33m{notice}[0m")
+        if notice_cb:
+            try:
+                notice_cb(notice)
+            except Exception:
+                pass
+        try:
+            res = _call(new_model, body, timeout=timeout)
+            _REPLACEMENTS[model] = new_model
+            _REPLACEMENTS[current] = new_model
+            return res, new_model
+        except RuntimeError as exc2:
+            raise RuntimeError(f"404: {current} is gone, and replacement {new_model} also failed: {exc2}")
+
+
+def text_turn(model, system, history, text, label="pair", notice_cb=None):
     """Gemini as MASTER (plans, reviews): text only. history [(user|model, text)]. -> (answer, cost)."""
     contents = [{"role": r, "parts": [{"text": t}]} for r, t in history if t.strip()]
     contents.append({"role": "user", "parts": [{"text": text}]})
-    j = _call(model, {"systemInstruction": {"parts": [{"text": system}]}, "contents": contents})
-    cost = _usage_cost(model, j)
-    G.ledger(cost, label + " " + text, model)
+    j, effective_model = _call_with_recovery(model, {"systemInstruction": {"parts": [{"text": system}]}, "contents": contents}, notice_cb=notice_cb)
+    cost = _usage_cost(effective_model, j)
+    G.ledger(cost, label + " " + text, effective_model)
     cand = (j.get("candidates") or [{}])[0]
     ans = "".join(p.get("text", "") for p in (cand.get("content") or {}).get("parts", []) if not p.get("thought"))
     if not ans.strip():
@@ -203,7 +286,7 @@ def text_turn(model, system, history, text, label="pair"):
     return ans.strip(), cost
 
 
-def agent_turn(model, system, history, text, cwd, on_tool=None, stop_event=None, budget=None, label="pair slave"):
+def agent_turn(model, system, history, text, cwd, on_tool=None, stop_event=None, budget=None, label="pair slave", notice_cb=None):
     """Gemini as SLAVE: the tool loop. -> (final text, cost, steps). budget(): dollars still allowed for this pair turn.
     Raises Stopped on STOP, RuntimeError on a service error (cost so far already booked; see .cost on the error)."""
     root, why = folder_ok(cwd)
@@ -218,8 +301,8 @@ def agent_turn(model, system, history, text, cwd, on_tool=None, stop_event=None,
         if budget is not None and budget() - total <= 0:
             return f"(the slave stopped: the pair's cost cap was reached after {step - 1} steps)", total, step - 1
         try:
-            j = _call(model, {"systemInstruction": {"parts": [{"text": system}]}, "contents": contents,
-                              "tools": [{"functionDeclarations": DECLS}]})
+            j, model = _call_with_recovery(model, {"systemInstruction": {"parts": [{"text": system}]}, "contents": contents,
+                                           "tools": [{"functionDeclarations": DECLS}]}, notice_cb=notice_cb)
         except RuntimeError as exc:
             exc.cost = total
             raise
