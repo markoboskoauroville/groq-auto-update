@@ -142,6 +142,7 @@ enum Updater {
         p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
         do { try p.run() } catch { toast("Update failed: \(error)"); return }
         log("installing v\(v) from \(newApp.path) over \(target)")
+        Delegate.quitWithoutAsking = true       // the swap script waits for this process: no Quit guard question
         NSApp.terminate(nil)
     }
 

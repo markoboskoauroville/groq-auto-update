@@ -8,7 +8,7 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 
-let VERSION = 27
+let VERSION = 28
 let APP_NAME = "Queen"
 
 enum Ink {
@@ -114,7 +114,7 @@ struct TopRow: View {
                 Spacer().frame(width: 64)                   // the traffic lights
                 Text("ON").foregroundStyle(Ink.green).unit().padding(.horizontal, 6)
                 Word(text: "OFF", id: "off", color: Ink.grey, help: "Quit Queen: her server on 8765 and her backend on 8766 stop") {
-                    Queen.shared.stopIfOurs()
+                    // the server and backend stop in applicationWillTerminate, only after Marko confirmed the Quit guard
                     DispatchQueue.main.async { NSApp.terminate(nil) }
                 }
                 Spacer()
@@ -525,6 +525,26 @@ enum UIState {
 
 // ---------------------------------------------------------------- the app
 final class Delegate: NSObject, NSApplicationDelegate {
+    /// Quit guard (Marko, 19.11.2026): every quit (Cmd-Q, Dock, menu, OFF) asks first. Code that quits Queen on purpose and
+    /// unattended (the updater's swap, which waits for this process to end) sets this before NSApp.terminate, so nothing hangs.
+    static var quitWithoutAsking = false
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if Delegate.quitWithoutAsking { return .terminateNow }
+        // Log out, restart and shut down arrive with a quit-reason attribute ('why?'): never block the system.
+        if NSAppleEventManager.shared().currentAppleEvent?.attributeDescriptor(forKeyword: 0x7768793F) != nil { return .terminateNow }
+        NSApp.activate(ignoringOtherApps: true)
+        let a = NSAlert()
+        a.messageText = "Are you sure you want to quit?"
+        a.informativeText = "Queen's server (8765) and her backend (8766) stop with her."
+        a.addButton(withTitle: "Quit")
+        a.addButton(withTitle: "Cancel")
+        return a.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+    }
+
+    /// Runs only once the quit is confirmed (never when Cancel was pressed): her server and the backend this app started stop.
+    func applicationWillTerminate(_ n: Notification) { Queen.shared.stopIfOurs() }
+
     func applicationDidFinishLaunching(_ n: Notification) {
         NSApp.appearance = NSAppearance(named: .darkAqua)
         QueenHost.shared.start(appVersion: VERSION)     // Phase A: Queen's server is this app (8765), Python is its backend (8766)

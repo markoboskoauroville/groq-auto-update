@@ -1,6 +1,6 @@
 {
-  "version": 27,
-  "updated_at": "2026-11-19T05:43:22+0100",
+  "version": 28,
+  "updated_at": "2026-11-19T05:48:19+0100",
   "log": [
     {
       "version": 1,
@@ -215,6 +215,17 @@
         "mac_app/app/Capi.swift",
         "mac_app/app/App.swift",
         "queen_skills/gemini-404-recovery.md"
+      ]
+    },
+    {
+      "version": 28,
+      "timestamp": "2026-11-19T05:48:19+0100",
+      "message": "v28: Quit guard: every quit (Cmd-Q, Dock, menu, OFF) asks 'Are you sure you want to quit?' with Quit / Cancel; the server and backend stop only after the quit is confirmed (OFF no longer stops them before the question); the updater's swap and system log out / shut down skip the question",
+      "files": [
+        "mac_app/app/App.swift",
+        "mac_app/app/Updater.swift",
+        "TAKEOVER.md",
+        "version.json"
       ]
     }
   ]
