@@ -8,7 +8,9 @@ CAPI now has a per-chat model-router switch. The cheapest model in the selected 
 
 The Python API client is `tools/queen_capi.py`; capabilities are at `GET /api/capi/capabilities` and usage is documented in `CAPI_PYTHON_API.md`. CAPI folders can be selected with a directory picker and must be existing directories below the home directory. Gemini tool calls receive the prompt's file attachments in the selected folder; Google Cloud Gemini supports only the allowlisted audio/video MIME types, while Claude/Oxyy and pair mode reject media they cannot process.
 
-Validation: all Python install-gate tests, the CAPI feature/API tests, Python compilation, JSON parsing, and `git diff --check` pass. Swift UI, the GitHub mac-app workflow, local installation, live API routing, and the requested song-to-PDF stress test remain pending. Swift UI is compiled by the GitHub mac-app workflow, not on this Mac.
+Validation: all Python install-gate tests, the CAPI feature/API tests, Python compilation, JSON parsing, and `git diff --check` pass. GitHub mac-app workflow 44498088399 passed its Swift tests, build, package, and release; v30 is published. The Python backend is installed locally at `~/.groq` v30. `/Applications/Queen.app` is still running v28; its v30 auto-update runs on app launch. The Computer Use client was unavailable ("client is not authorized"), so the app has not yet restarted and the new capabilities route still returns 404 from the old process.
+
+The requested `/Users/markobosko/Documents/ETHNO-HRVATSKA` stress test has not run. Inventory: five M4A recordings (largest 8.32 MiB), four existing PDFs, no `PDF` folder. Marko confirmed rights for all five songs and arrangements on 19.11.2026. PDF generation and visual assessment remain pending until the v30 app/backend is active.
 
 ## v29 work: CAPI-first navigation, Auto Update chat, and Python API
 
