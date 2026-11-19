@@ -9,6 +9,8 @@ python3 "${SRC}/qwen_app/test_rename_skill.py" >/dev/null || { echo "test_rename
 python3 "${SRC}/qwen_app/test_triple_chat.py" >/dev/null || { echo "test_triple_chat.py FAILED: not installed" >&2; exit 1; }
 python3 "${SRC}/qwen_app/test_training.py" >/dev/null || { echo "test_training.py FAILED: not installed" >&2; exit 1; }
 python3 "${SRC}/qwen_app/test_pair_chat.py" >/dev/null || { echo "test_pair_chat.py FAILED: not installed" >&2; exit 1; }
+python3 "${SRC}/qwen_app/test_capi_features.py" >/dev/null || { echo "test_capi_features.py FAILED: not installed" >&2; exit 1; }
+python3 "${SRC}/tools/test_queen_capi.py" >/dev/null || { echo "test_queen_capi.py FAILED: not installed" >&2; exit 1; }
 mkdir -p "${G}/qwen_app"
 [[ -x "${G}/venv/bin/python" ]] || python3 -m venv "${G}/venv"
 "${G}/venv/bin/python" -m pip install --quiet --upgrade pip

@@ -71,6 +71,8 @@ final class Capi: ObservableObject {
     @Published var pairNote = ""
     @Published var pairRounds = 5
     @Published var pairCap = 0.50
+    @Published var routerOn = false
+    @Published var routerNote = ""
     static let maxFile = 20 * 1024 * 1024
     @Published var creditNote = ""
     private var poller: Task<Void, Never>?
@@ -79,7 +81,8 @@ final class Capi: ObservableObject {
 
     var creditText: String {
         let ex = creditExpiry.isEmpty ? "" : ", to " + creditExpiry
-        return left.map { String(format: "\(providerName) ($%.2f left", $0) + ex + ")" } ?? "\(providerName) ($ ?)"
+        let label = (provider == "gcloud" || provider == "oxyy") ? "\(providerName) estimate" : providerName
+        return left.map { String(format: "\(label) ($%.2f left", $0) + ex + ")" } ?? "\(label) ($ ?)"
     }
     var folderName: String { (cwd as NSString).lastPathComponent }
 
@@ -277,6 +280,14 @@ final class Capi: ObservableObject {
         title = (room["title"] as? String) ?? "CAPI chat"
         model = (room["model"] as? String) ?? model
         queenOn = (room["queen"] as? String) == "on"
+        routerOn = (room["router_on"] as? Bool) ?? false
+        if let route = room["last_route"] as? [String: Any] {
+            let picked = route["model"] as? String ?? ""
+            let reason = route["reason"] as? String ?? ""
+            routerNote = [picked, reason].filter { !$0.isEmpty }.joined(separator: " — ")
+        } else {
+            routerNote = ""
+        }
         if let g = room["gmodel"] as? String, !g.isEmpty { gmodel = g } else if gmodel.isEmpty { gmodel = gDefault }
         cwd = (room["cwd"] as? String) ?? cwd
         total = (room["total"] as? Double) ?? 0
@@ -347,7 +358,16 @@ final class Capi: ObservableObject {
                 continue
             }
             guard let d = try? Data(contentsOf: u) else { notice = "\(u.lastPathComponent) could not be read."; continue }
-            let mime = UTType(filenameExtension: u.pathExtension.lowercased())?.preferredMIMEType ?? "application/octet-stream"
+            let ext = u.pathExtension.lowercased()
+            let mimeOverrides = [
+                "3gp": "video/3gpp", "aac": "audio/x-aac", "flac": "audio/flac",
+                "flv": "video/x-flv", "m4a": "audio/m4a", "m4v": "video/mp4",
+                "mp3": "audio/mp3", "mpga": "audio/mpga", "mpg": "video/mpg",
+                "mpeg": "video/mpeg", "mp4": "video/mp4", "ogg": "audio/ogg",
+                "pcm": "audio/pcm", "mov": "video/quicktime", "wav": "audio/wav",
+                "webm": "video/webm", "wmv": "video/wmv",
+            ]
+            let mime = mimeOverrides[ext] ?? UTType(filenameExtension: ext)?.preferredMIMEType ?? "application/octet-stream"
             attachments.append(Attach(name: u.lastPathComponent, mime: mime, data: d))
         }
     }
@@ -370,6 +390,25 @@ final class Capi: ObservableObject {
 
     @MainActor
     func setFolder(_ p: String) { cwd = p; saveSettings() }
+
+    @MainActor
+    func pickFolder() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a CAPI working folder"
+        panel.prompt = "Use this folder"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).standardizedFileURL.path
+        let chosen = url.standardizedFileURL.path
+        guard chosen != home, chosen.hasPrefix(home + "/") else {
+            notice = "Choose a folder below your home directory."
+            return
+        }
+        setFolder(chosen)
+    }
 
     @MainActor
     private func saveSettings() {
@@ -395,10 +434,38 @@ final class Capi: ObservableObject {
         notice = ""
         let id = convId
         Task { @MainActor in
-            let j = await Queen.shared.json("/api/capi/send", body: ["id": id, "text": t, "files": files], timeout: 180)
+            let j = await Queen.shared.json("/api/capi/send", body: ["id": id, "text": t, "files": files, "router": routerOn], timeout: 180)
+            if let route = j?["route"] as? [String: Any] {
+                let picked = route["model"] as? String ?? ""
+                let reason = route["reason"] as? String ?? ""
+                self.routerNote = [picked, reason].filter { !$0.isEmpty }.joined(separator: " — ")
+            }
             if let e = j?["error"] as? String, !e.isEmpty, id == self.convId { self.notice = Capi.line(e) }
             await self.loadConvs()
             if id == self.convId { await self.reload() }
+        }
+    }
+
+    @MainActor
+    func setRouter(_ on: Bool) {
+        guard !pairActive || !on else {
+            notice = "Turn off pair mode before using the model router."
+            return
+        }
+        let old = routerOn
+        routerOn = on
+        Task { @MainActor in
+            guard let j = await Queen.shared.json("/api/capi/settings", body: ["id": convId, "router_on": on]) else {
+                routerOn = old
+                notice = "Queen did not save the model-router setting."
+                return
+            }
+            if (j["ok"] as? Bool) == false {
+                routerOn = old
+                notice = (j["error"] as? String) ?? "Queen did not save the model-router setting."
+            } else {
+                routerOn = ((j["room"] as? [String: Any])?["router_on"] as? Bool) ?? on
+            }
         }
     }
 
@@ -546,7 +613,7 @@ struct CapiHeader: View {
                     .help("Choose the file with the API key of the chosen provider; other text around it is fine")
             }.pipeGroup().padding(.vertical, 2)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(String(format: "this chat $%.4f", c.total).replacingOccurrences(of: " ", with: "\u{00A0}"))
+                Text(String(format: "this chat $%.6f", c.total).replacingOccurrences(of: " ", with: "\u{00A0}"))
                     .foregroundStyle(Ink.dim).unit()
                 Word(text: c.queenOn ? "QUEEN: ON" : "QUEEN: OFF", id: "capi-queen", color: c.queenOn ? Ink.amber : Ink.green,
                      help: c.queenOn ? "Queen may use this chat (her capi skill). Click to bypass her again."
@@ -560,6 +627,8 @@ struct CapiHeader: View {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("FOLDER").foregroundStyle(Ink.dim).unit().padding(.leading, 6)
                 Menu {
+                    Button("CHOOSE FOLDER…") { c.pickFolder() }
+                    if !c.folders.isEmpty { Divider() }
                     ForEach(c.folders) { f in Button(f.name) { c.setFolder(f.path) } }
                 } label: {
                     Text(c.folderName.isEmpty ? "…" : c.folderName).foregroundStyle(Ink.accent).unit()
@@ -568,7 +637,7 @@ struct CapiHeader: View {
                 .padding(.horizontal, 6).padding(.vertical, 4)
                 .pressHover()
                 .accessibilityIdentifier("capi-folder")
-                .help("The folder Claude Code works in")
+                .help("The selected folder is Claude Code's working directory; Google Cloud tools are confined to it")
             }.pipeGroup()
             Word(text: "NEW CHAT", id: "capi-new-conversation",
                  help: "A clean chat: its own Claude Code process") { Task { await c.newConversation() } }
@@ -815,7 +884,7 @@ struct CapiInput: View {
                     .onTapGesture { c.pickFiles() }
                     .axButton("Attach files", id: "capi-attach") { c.pickFiles() }
                     .pressHover()
-                    .help("Attach images, PDFs, text or code (up to 20 MB each); you can also drop or paste them here")
+                    .help("Attach images, PDFs, text or code. Google Cloud accepts its documented audio/video MIME types. 20 MB per file.")
                 Text(c.pairActive ? "MASTER\u{00A0}MODEL" : "MODEL").foregroundStyle(Ink.dim).unit().padding(.horizontal, 6)
                     .help(c.pairActive ? "The master's model; the master chooses the slave's model itself, round by round" : "")
                 if (c.pairActive ? c.pairMaster : c.provider) == "gcloud" {
@@ -838,16 +907,29 @@ struct CapiInput: View {
                         Word(text: Triple.short(m), id: "capi-model-" + m, color: c.model == m ? Ink.claude : Ink.grey, help: m) { c.setModel(m) }
                     }
                 }
+                Word(text: c.routerOn ? "ROUTER ON" : "ROUTER OFF", id: "capi-router",
+                     color: c.pairActive ? Ink.grey : (c.routerOn ? Ink.green : Ink.text),
+                     help: c.pairActive ? "Turn off pair mode to use the model router"
+                                        : "Use the selected provider's cheapest model as a judge, then route this prompt to its least expensive suitable model") {
+                    c.setRouter(!c.routerOn)
+                }
                 if c.busy {
                     Word(text: "STOP", id: "capi-stop", color: Ink.amber, help: "Stop this chat's process (the history stays)") { c.stop() }
                 } else {
                     let has = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !c.attachments.isEmpty
-                    Word(text: "SEND", id: "capi-send", color: has ? Ink.accent : Ink.grey, help: "Send to Claude Code (Return)") { go() }
+                    Word(text: "SEND", id: "capi-send", color: has ? Ink.accent : Ink.grey, help: "Send to the selected provider (Return)") { go() }
                 }
             }
             .clipped()
             .font(.system(size: 13, weight: .bold, design: .monospaced))
             .frame(maxWidth: .infinity, alignment: .leading)
+            if c.routerOn && !c.routerNote.isEmpty {
+                Text("ROUTED: " + c.routerNote)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Ink.green)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .padding(.horizontal, 12).padding(.bottom, 10).padding(.top, 2)
     }

@@ -1,3 +1,19 @@
+## v30 (19.11.2026)
+- The router must receive attachment metadata to assess a file-oriented task, but never the base64/file contents; its response must be a JSON object selecting only a catalog model.
+- Count the router judge in the chat total as well as the provider ledger, retaining enough decimal places for a small judge call to remain visible.
+- A missing paid API key must not block the Auto Update chat before its local-Claude route is tried; the backend owns the explicit consent and paid-key checks.
+- Reject unknown `application/*` MIME types and malformed base64 rather than accidentally decoding an opaque attachment as text. Google audio/video MIME support must remain a provider-specific allowlist.
+- Local Python checks do not compile SwiftUI. The v30 app release must wait for the GitHub mac-app workflow, then the installed app and API should be checked before processing the song folder.
+
+## v29 (19.11.2026)
+- Gemini with folder tools must receive the current turn's prepared attachments in its initial user parts; forwarding attachments only in the no-folder path leaves folder-enabled chats unable to read the files.
+- Decode unknown files as text only after valid UTF-8 and control-character checks. Binary files that happen to decode (for example NUL bytes) must not be sent as text.
+- Keep media MIME support explicit and provider-specific. Unsupported formats or Anthropic/pair media must produce a visible error, not be silently omitted.
+- A selected folder is a working-directory choice, not a universal sandbox. Validate it on the server as an existing folder below home; describe Claude Code as using it for `cwd` and Gemini tools as folder-confined.
+- A model router spends one judge call before the user turn. Record that cost, show the selected model and reason, keep it off by default, and fail visibly if the judge returns an invalid model.
+- The Auto Update endpoint can publish and sync code. Its desktop chat requires explicit run confirmation and separately honors the backend's paid-API consent; its existing allowlist is backend-only.
+- Swift UI is compiled by the GitHub mac-app workflow, not on this Mac; local Python tests cannot validate App.swift or AutoUpdate.swift.
+
 ## v24 (18.11.2026)
 - Gemini via Google Cloud key: "Reply with exactly: PONG" -> PONG, $0.0002; a 64x64 red PNG attached -> "Red", $0.0004; 21 MB file -> "big.bin is 21.0 MB: the limit is 20 MB per file."; Claude on Vertex without ADC -> "Claude on Google Cloud is not ready yet: no sign-in yet (gcloud auth application-default login)".
 - Trap: `pgrep -f "qwen_app/app.py"` inside a Bash command matches the shell's own command line and kills it; use `pgrep -f "[q]wen_app/app.py"`. Killing Queen's Python child makes the Swift app restart it within about 20 s (that is the restart).

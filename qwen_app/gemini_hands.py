@@ -295,7 +295,7 @@ def text_turn(model, system, history, text, label="pair", notice_cb=None):
     return ans.strip(), cost
 
 
-def agent_turn(model, system, history, text, cwd, on_tool=None, stop_event=None, budget=None, label="pair slave", notice_cb=None):
+def agent_turn(model, system, history, text, cwd, on_tool=None, stop_event=None, budget=None, label="pair slave", notice_cb=None, files=None):
     """Gemini as SLAVE: the tool loop. -> (final text, cost, steps). budget(): dollars still allowed for this pair turn.
     Raises Stopped on STOP, RuntimeError on a service error (cost so far already booked; see .cost on the error)."""
     system = system + f"\n\nYou have at most {MAX_STEPS} tool steps. Always end with a plain-text report (no tool call): what you did, the commands with their real output, what is left."
@@ -303,7 +303,7 @@ def agent_turn(model, system, history, text, cwd, on_tool=None, stop_event=None,
     if not root:
         raise RuntimeError("Gemini slave: " + why)
     contents = [{"role": r, "parts": [{"text": t}]} for r, t in history if t.strip()]
-    contents.append({"role": "user", "parts": [{"text": text}]})
+    contents.append({"role": "user", "parts": G._gemini_parts(text, files or [])})
     total = 0.0
     for step in range(1, MAX_STEPS + 1):
         if stop_event is not None and stop_event.is_set():

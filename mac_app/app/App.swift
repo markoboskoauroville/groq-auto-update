@@ -8,7 +8,7 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 
-let VERSION = 28
+let VERSION = 30
 let APP_NAME = "Queen"
 
 enum Ink {
@@ -148,11 +148,15 @@ struct TopRow: View {
 }
 
 // ---------------------------------------------------------------- the status line
+enum QueenTab: String, Equatable {
+    case capi
+    case autoUpdate = "auto-update"
+}
+
 struct StatusLine: View {
     @ObservedObject var q = Queen.shared
-    @ObservedObject var tr = Triple.shared
     @ObservedObject var cp = Capi.shared
-    @Binding var showChats: Bool
+    @Binding var selectedTab: QueenTab
     var body: some View {
         // v20: groups divided by dim pipes; a group is one unbreakable unit and wraps whole; the tabs sit at the right end
         FlowLayout(spacing: 8, rowSpacing: 2) {
@@ -179,16 +183,13 @@ struct StatusLine: View {
                 }.pipeGroup().flowRight()
             }
             HStack(alignment: .firstTextBaseline, spacing: 0) {
-            Word(text: "TRIPLE", id: "triple", color: tr.active ? Ink.claude : Ink.text,
-                 help: "Triple chat: you, Queen and Claude in one room, everyone hears everyone") { cp.active = false; tr.toggle() }
-                
-            Word(text: "CAPI", id: "capi", color: cp.active ? Ink.claude : Ink.text,
-                 help: "CAPI: chat with Claude Code on your API credit") { cp.toggle() }
-            Word(text: "CHATS", id: "chats", color: showChats ? Ink.accent : Ink.text, help: "Your saved chats with Queen") {
-                showChats.toggle()
-                if showChats { Task { await q.loadChats() } }
-            }
-            Word(text: "NEW CHAT", id: "new-chat", help: "A clean chat") { q.newChat() }
+                Word(text: "CAPI", id: "capi", color: selectedTab == .capi ? Ink.claude : Ink.text,
+                     help: "CAPI coding chats") {
+                    selectedTab = .capi
+                    if !cp.active { cp.toggle() }
+                }
+                Word(text: "AUTO UPDATE", id: "auto-update", color: selectedTab == .autoUpdate ? Ink.claude : Ink.text,
+                     help: "Chat with Queen's update pipeline") { selectedTab = .autoUpdate }
             }.unit().flowRight()
         }
         .clipped()
@@ -419,78 +420,47 @@ struct InputRow: View {
 }
 
 struct Root: View {
-    @State private var showChats = false
-    @State private var showRooms = false
-    @State private var showCapiRooms = false
-    @ObservedObject var tr = Triple.shared
+    @State private var selectedTab: QueenTab = .capi
     @ObservedObject var cp = Capi.shared
+    @StateObject private var autoUpdate = AutoUpdateChat()
     @AppStorage("ui.capiListWidth") private var capiListW: Double = 330     // v18: the divider's width, remembered
     @AppStorage("ui.capiShowList") private var capiShowList = true         // v22: CHATS hides the whole list pane
     var body: some View {
         VStack(spacing: 0) {
             TopRow()
             Hairline()
-            StatusLine(showChats: $showChats)
+            StatusLine(selectedTab: $selectedTab)
             Hairline()
-            if cp.active { CapiHeader(showList: $capiShowList); Hairline() }
-            HStack(spacing: 0) {
-                if cp.active {
+            if selectedTab == .capi {
+                CapiHeader(showList: $capiShowList)
+                Hairline()
+                HStack(spacing: 0) {
                     if capiShowList {
                         CapiRoomList().frame(minWidth: 230, idealWidth: capiListW, maxWidth: capiListW)
                         SplitHandle(width: $capiListW, minW: 230, maxW: 520, reset: 330)
                     }
                     CapiPane()
-                } else if tr.active {
-                    if showRooms {
-                        RoomList().frame(width: 240)
-                        Rectangle().fill(Ink.line).frame(width: 1)
-                    }
-                    TripleConversation()
-                } else {
-                    if showChats {
-                        ChatList().frame(width: 270)
-                        Rectangle().fill(Ink.line).frame(width: 1)
-                    }
-                    Conversation()
                 }
-            }
-            if !cp.active { Hairline() }
-            if cp.active {
-                EmptyView()                     // v23: the CAPI input lives inside the right pane (CapiPane)
-            } else if tr.active {
-                TripleControls(showRooms: $showRooms)
-                Hairline()
-                TripleInput()
             } else {
-                InputRow()
+                AutoUpdatePane(chat: autoUpdate)
             }
         }
         .background(Ink.bg)
         .ignoresSafeArea(.container, edges: .top)
         .preferredColorScheme(.dark)
-        .modifier(StateKeeper(showChats: $showChats, showRooms: $showRooms, showCapiRooms: $showCapiRooms))
+        .modifier(StateKeeper(selectedTab: $selectedTab))
     }
 }
 
 /// Persists the screen state (split out of Root: the type checker gives up on one long chain).
 struct StateKeeper: ViewModifier {
-    @Binding var showChats: Bool
-    @Binding var showRooms: Bool
-    @Binding var showCapiRooms: Bool
+    @Binding var selectedTab: QueenTab
     @ObservedObject var cp = Capi.shared
-    @ObservedObject var tr = Triple.shared
-    @ObservedObject var q = Queen.shared
     func body(content: Content) -> some View {
         content
-            .onAppear { UIState.restore(showChats: $showChats, showRooms: $showRooms, showCapiRooms: $showCapiRooms) }
-            .onChange(of: cp.active) { _ in UIState.saveMode() }
-            .onChange(of: tr.active) { _ in UIState.saveMode() }
+            .onAppear { UIState.restore(selectedTab: $selectedTab) }
+            .onChange(of: selectedTab) { mode in UIState.saveMode(mode) }
             .onChange(of: cp.convId) { (v: String) in UIState.d.set(v, forKey: "ui.capiConv") }
-            .onChange(of: tr.roomId) { (v: String) in UIState.d.set(v, forKey: "ui.tripleRoom") }
-            .onChange(of: q.chatId) { (v: String) in UIState.d.set(v, forKey: "ui.chatId") }
-            .onChange(of: showChats) { (v: Bool) in UIState.d.set(v, forKey: "ui.showChats") }
-            .onChange(of: showRooms) { (v: Bool) in UIState.d.set(v, forKey: "ui.showRooms") }
-            .onChange(of: showCapiRooms) { (v: Bool) in UIState.d.set(v, forKey: "ui.showCapiRooms") }
     }
 }
 
@@ -500,25 +470,20 @@ struct StateKeeper: ViewModifier {
 enum UIState {
     static let d = UserDefaults.standard
     static var restoring = true
-    static func saveMode() {
+    static func saveMode(_ mode: QueenTab) {
         if restoring { return }
-        d.set(Capi.shared.active ? "capi" : (Triple.shared.active ? "triple" : "queen"), forKey: "ui.mode")
+        d.set(mode.rawValue, forKey: "ui.mode")
     }
-    static func restore(showChats: Binding<Bool>, showRooms: Binding<Bool>, showCapiRooms: Binding<Bool>) {
+    static func restore(selectedTab: Binding<QueenTab>) {
         guard restoring else { return }
-        showChats.wrappedValue = d.bool(forKey: "ui.showChats")
-        showRooms.wrappedValue = d.bool(forKey: "ui.showRooms")
-        showCapiRooms.wrappedValue = d.bool(forKey: "ui.showCapiRooms")
-        let mode = d.string(forKey: "ui.mode") ?? "queen"
+        let mode = d.string(forKey: "ui.mode") ?? QueenTab.capi.rawValue
+        selectedTab.wrappedValue = mode == QueenTab.autoUpdate.rawValue ? .autoUpdate : .capi
         Task { @MainActor in
-            if let c = d.string(forKey: "ui.chatId"), !c.isEmpty {
-                try? await Task.sleep(nanoseconds: 1_200_000_000)           // the server binds first
-                await Queen.shared.open(c)                                  // missing chat: stays on the clean one
+            if selectedTab.wrappedValue == .capi, !Capi.shared.active {
+                Capi.shared.preferred = d.string(forKey: "ui.capiConv") ?? ""
+                Capi.shared.toggle()
             }
-            if mode == "capi" { Capi.shared.preferred = d.string(forKey: "ui.capiConv") ?? ""; Capi.shared.toggle() }
-            else if mode == "triple" { Triple.shared.preferred = d.string(forKey: "ui.tripleRoom") ?? ""; Triple.shared.toggle() }
             restoring = false
-            if showChats.wrappedValue { await Queen.shared.loadChats() }
         }
     }
 }

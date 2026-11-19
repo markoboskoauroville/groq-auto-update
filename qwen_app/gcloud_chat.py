@@ -10,8 +10,8 @@ expires about 9.12.2026), project antigravity-cloud-offload.
    anthropic_version vertex-2023-10-16, OAuth bearer from Application Default Credentials (API keys are refused there:
    401 "API keys are not supported"). No ADC or 403/404 (access pending) -> the plain line
    "Claude on Google Cloud is not ready yet: <reason>".
- * Attachments: images (inline_data / image block), PDF (inline_data / document block), text and code inlined as text.
-   20 MB per file.
+ * Attachments: images and PDF sent inline, text/code inlined as text, and supported Gemini audio/video MIME types sent as
+   inline media. 20 MB per file; unsupported binary formats are rejected.
 """
 from __future__ import annotations
 
@@ -51,6 +51,10 @@ RATES = [("opus", (5.0, 25.0)), ("sonnet", (3.0, 15.0)), ("haiku", (1.0, 5.0)),
          ("pro", (1.25, 10.0)), ("lite", (0.10, 0.40)), ("flash", (0.30, 2.50))]
 TEXT_EXT = {".txt", ".md", ".py", ".js", ".ts", ".json", ".csv", ".html", ".css", ".swift", ".kt", ".java", ".c", ".h",
             ".cpp", ".sh", ".yml", ".yaml", ".xml", ".toml", ".ini", ".log", ".sql", ".rb", ".go", ".rs", ".tsx", ".jsx"}
+AUDIO_MIME = {"audio/flac", "audio/m4a", "audio/mp3", "audio/mpeg", "audio/mp4", "audio/mpga",
+              "audio/ogg", "audio/pcm", "audio/wav", "audio/webm", "audio/x-aac"}
+VIDEO_MIME = {"video/3gpp", "video/mp4", "video/mpeg", "video/mpegs", "video/mpg", "video/quicktime",
+              "video/webm", "video/wmv", "video/x-flv"}
 
 
 class NotReady(Exception):
@@ -130,6 +134,19 @@ def left():
     return round(max(0.0, float(config()["start_usd"]) - spent()), 4)
 
 
+def credit_info():
+    c = config()
+    return {
+        "left": left(),
+        "start_usd": float(c["start_usd"]),
+        "snapshot": c["read"],
+        "expires": c["expires"],
+        "is_estimate": True,
+        "live_balance_supported": False,
+        "source": "historical Billing snapshot minus Queen's token-price ledger",
+    }
+
+
 def set_balance(usd):
     START_FILE.parent.mkdir(parents=True, exist_ok=True)
     START_FILE.write_text(json.dumps({"start_usd": float(usd), "at": time.time(), "expires": config()["expires"]}))
@@ -188,7 +205,7 @@ def prepare_files(files):
     for f in files or []:
         name = str(f.get("name") or "file")[:120]
         try:
-            raw = base64.b64decode(f.get("b64") or "", validate=False)
+            raw = base64.b64decode(f.get("b64") or "", validate=True)
         except Exception:
             return [], f"{name}: the file could not be read."
         if len(raw) > MAX_FILE:
@@ -199,20 +216,29 @@ def prepare_files(files):
             out.append({"kind": "image", "name": name, "mime": mime, "b64": base64.b64encode(raw).decode()})
         elif mime == "application/pdf" or ext == ".pdf":
             out.append({"kind": "pdf", "name": name, "mime": "application/pdf", "b64": base64.b64encode(raw).decode()})
+        elif mime in AUDIO_MIME:
+            out.append({"kind": "audio", "name": name, "mime": mime, "b64": base64.b64encode(raw).decode()})
+        elif mime in VIDEO_MIME:
+            out.append({"kind": "video", "name": name, "mime": mime, "b64": base64.b64encode(raw).decode()})
         elif mime.startswith("text/") or ext in TEXT_EXT or mime in ("application/json", "application/xml"):
             out.append({"kind": "text", "name": name, "text": raw.decode("utf-8", "replace")})
         else:
+            if mime not in ("", "application/octet-stream"):
+                return [], f"{name}: unsupported file type. Supported: images, PDF, text/code, and Gemini-supported audio/video."
             try:
-                out.append({"kind": "text", "name": name, "text": raw.decode("utf-8")})
+                text = raw.decode("utf-8")
             except Exception:
-                return [], f"{name}: this kind of file is not supported (images, PDF, text and code are)."
+                return [], f"{name}: unsupported file type. Supported: images, PDF, text/code, and Gemini-supported audio/video."
+            if any(ord(char) < 32 and char not in "\t\n\r\f" for char in text):
+                return [], f"{name}: unsupported file type. Supported: images, PDF, text/code, and Gemini-supported audio/video."
+            out.append({"kind": "text", "name": name, "text": text})
     return out, ""
 
 
 def _gemini_parts(text, files):
     parts = []
     for f in files:
-        if f["kind"] in ("image", "pdf"):
+        if f["kind"] in ("image", "pdf", "audio", "video"):
             parts.append({"inline_data": {"mime_type": f["mime"], "data": f["b64"]}})
         else:
             parts.append({"text": f"[file {f['name']}]\n{f['text']}\n[end of {f['name']}]"})

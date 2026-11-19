@@ -83,6 +83,18 @@ def _ok_cwd(cwd):
     return p if (p == home or p.startswith(home + os.sep)) and os.path.isdir(p) else DEFAULT_CWD
 
 
+def _validate_cwd(cwd):
+    home = os.path.realpath(str(Path.home()))
+    path = os.path.realpath(os.path.expanduser(str(cwd or "")))
+    if path == home:
+        return "", "Choose a working folder below the home directory, not the home directory itself."
+    if not path.startswith(home + os.sep):
+        return "", "The working folder must be inside the home directory."
+    if not os.path.isdir(path):
+        return "", "The working folder does not exist or is not a directory."
+    return path, ""
+
+
 # ---------------------------------------------------------------- Queen bypass (v25)
 # Marko, 18.11.2026: CAPI chats on Anthropic (local Claude Code) and Google Cloud (Gemini) are a bypass of Queen: no Queen system
 # prompt or queen_skills, no Groq/qwen call, nothing recorded for her training. This module never imports app.py's chat path,
@@ -357,6 +369,15 @@ class Conv:
         import pair_chat
         st = pair_chat.status(_key, PROVIDERS, pair) if pair is not None else pair_chat.status(_key, PROVIDERS)
         if st["active"]:
+            if files:
+                import gcloud_chat
+                prepared, err = gcloud_chat.prepare_files(files)
+                if err:
+                    self.error = err
+                    return False
+                if any(f["kind"] in ("audio", "video") for f in prepared):
+                    self.error = "Audio/video attachments are supported in a single Google Cloud Gemini chat, not pair mode."
+                    return False
             return self._send_pair(text, files, st)
         with self.lock:
             want = get_provider()          # v17: the radio decides; a chat on the other provider restarts on this one
@@ -387,6 +408,15 @@ class Conv:
                 import gcloud_chat
                 prepared, err = gcloud_chat.prepare_files(files)
                 if err:
+                    self.pending["status"] = "failed"
+                    self.pending["reason"] = err
+                    self.pending = None
+                    self.busy = False
+                    self.error = err
+                    self.save()
+                    return False
+                if any(f["kind"] in ("audio", "video") for f in prepared):
+                    err = "Audio/video attachments are supported by Google Cloud Gemini only."
                     self.pending["status"] = "failed"
                     self.pending["reason"] = err
                     self.pending = None
@@ -512,7 +542,7 @@ class Conv:
         if cwd:
             try:
                 gh = [("user" if r == "marko" else "model", t) for r, t in hist]
-                ans, cost, _n = H.agent_turn(model, self.SOLO_SYS, gh, text, cwd, label="solo gemini")
+                ans, cost, _n = H.agent_turn(model, self.SOLO_SYS, gh, text, cwd, label="solo gemini", files=files)
                 res = {"text": ans, "cost": cost}
             except Exception as exc:
                 res = {"error": str(exc)}
@@ -526,7 +556,7 @@ class Conv:
                 self._mark("failed", res["error"])
             else:
                 self.room["messages"].append({"role": "claude", "text": res["text"], "cost": res["cost"], "model": model, "who": "GEMINI"})
-                self.room["total"] = round(self.room.get("total", 0.0) + res["cost"], 4)
+                self.room["total"] = round(self.room.get("total", 0.0) + res["cost"], 6)
                 self._mark("done")
             self.busy = False
             self.turns += 1
@@ -599,7 +629,7 @@ class Conv:
                         cost = round(max(cost, 0.0) * PROVIDERS.get(prov, PROVIDERS["anthropic"])["factor"], 6)
                         if cost:
                             _ledger(cost, self.prompt or "(background)", provider=prov)
-                            self.room["total"] = round(self.room.get("total", 0.0) + cost, 4)
+                            self.room["total"] = round(self.room.get("total", 0.0) + cost, 6)
                             for m in reversed(self.room["messages"]):
                                 if m["role"] == "claude":
                                     m["cost"] = round(m.get("cost", 0) + cost, 4)
@@ -806,15 +836,20 @@ def _credit_info():
         note = "Oxyy has no balance endpoint: the credit is your starting balance minus what Queen booked (estimate)."
     if cur == "gcloud":
         import gcloud_chat
-        c = gcloud_chat.config()
-        note = (f"Google Cloud free credit, project antigravity-cloud-offload: ${c['start_usd']:.2f} on {c['read']} (Billing page) minus "
-                f"Queen's ledger since; expires {gcloud_chat.expiry_text()}. The number is an estimate from token prices.")
+        c = gcloud_chat.credit_info()
+        note = (f"Google Cloud free credit estimate, project antigravity-cloud-offload: ${c['start_usd']:.2f} on "
+                f"{c['snapshot']} (Billing snapshot) minus Queen's token-price ledger; expires "
+                f"{gcloud_chat.expiry_text()}. This is not a live balance.")
     expires = ""
     if cur == "gcloud":
         import gcloud_chat
         expires = gcloud_chat.expiry_text()
-    return {"expires": expires, "left": left, "has_key": bool(_key(cur)), "provider": cur, "name": PROVIDERS[cur]["name"],
-            "providers": provs, "note": note}
+    out = {"expires": expires, "left": left, "has_key": bool(_key(cur)), "provider": cur, "name": PROVIDERS[cur]["name"],
+           "providers": provs, "note": note}
+    if cur == "gcloud":
+        import gcloud_chat
+        out["credit"] = gcloud_chat.credit_info()
+    return out
 
 
 def register(app):
@@ -836,6 +871,47 @@ def register(app):
     @app.get("/api/capi/credit")
     def capi_credit():
         return jsonify(_credit_info())
+
+    @app.get("/api/capi/capabilities")
+    def capi_capabilities():
+        import gcloud_chat
+        return jsonify({
+            "ok": True,
+            "api": "Queen CAPI",
+            "base_url": "http://127.0.0.1:8765",
+            "providers": sorted(PROVIDERS),
+            "attachments": {
+                "max_bytes_each": gcloud_chat.MAX_FILE,
+                "images": True,
+                "pdf": True,
+                "text_and_code": True,
+                "audio_mime_types": sorted(gcloud_chat.AUDIO_MIME),
+                "video_mime_types": sorted(gcloud_chat.VIDEO_MIME),
+                "audio_video_provider": "gcloud",
+                "audio_video_pair_mode": False,
+            },
+            "workspace": {
+                "folder_picker_endpoint": "GET /api/capi/folders",
+                "set_folder_endpoint": "POST /api/capi/settings",
+                "scope": "A selected existing folder below the user's home directory; Gemini tools stay confined to it, and Claude Code uses it as its working directory.",
+            },
+            "model_router": {
+                "enabled_per_chat": True,
+                "setting": "router_on",
+                "judge": "The selected provider's cheapest available model.",
+            },
+            "google_credit": gcloud_chat.credit_info(),
+            "endpoints": [
+                "GET /api/capi/list",
+                "GET /api/capi/get?id=<chat_id>",
+                "POST /api/capi/new",
+                "POST /api/capi/settings",
+                "POST /api/capi/send",
+                "POST /api/capi/start",
+                "POST /api/capi/stop",
+                "POST /api/capi/close",
+            ],
+        })
 
     @app.post("/api/capi/provider")
     def capi_provider():
@@ -906,7 +982,8 @@ def register(app):
         names = sorted(d.name for d in base.iterdir() if d.is_dir() and not d.name.startswith(".")) if base.is_dir() else []
         out = [{"name": n, "path": str(base / n)} for n in names]
         out.sort(key=lambda x: (x["path"] != DEFAULT_CWD, x["name"].lower()))
-        return jsonify({"folders": out, "default": DEFAULT_CWD, "models": MODELS})
+        return jsonify({"folders": out, "default": DEFAULT_CWD, "root": str(Path.home()), "models": MODELS,
+                        "can_choose_directory": True})
 
     @app.get("/api/capi/list")
     def capi_list():
@@ -933,7 +1010,12 @@ def register(app):
     @app.post("/api/capi/new")
     def capi_new():
         b = body()
-        return jsonify({"room": _new(b.get("cwd"), b.get("model")), "running": False, "busy": False, "error": ""})
+        cwd = b.get("cwd")
+        if cwd:
+            cwd, error = _validate_cwd(cwd)
+            if error:
+                return jsonify({"ok": False, "error": error}), 400
+        return jsonify({"room": _new(cwd, b.get("model")), "running": False, "busy": False, "error": ""})
 
     @app.post("/api/capi/delete")
     @app.post("/api/capi/close", endpoint="capi_close")
@@ -957,6 +1039,13 @@ def register(app):
     @app.post("/api/capi/settings")
     def capi_settings():
         b = body()
+        if "router_on" in b and not isinstance(b["router_on"], bool):
+            return jsonify({"ok": False, "error": "router_on must be true or false"}), 400
+        wanted_cwd = ""
+        if b.get("cwd"):
+            wanted_cwd, error = _validate_cwd(b["cwd"])
+            if error:
+                return jsonify({"ok": False, "error": error}), 400
         c = _conv(b.get("id", ""))
         if not c:
             r = _new(b.get("cwd"), b.get("model"))
@@ -971,12 +1060,14 @@ def register(app):
                 r["model"] = b["model"]
                 restart = c.running() and not c.busy
             if b.get("cwd"):
-                want = _ok_cwd(b["cwd"])
+                want = wanted_cwd
                 if want != r.get("cwd"):
                     if _session_file(r.get("session")):
                         note = "The folder is fixed once a conversation has started; NEW CONVERSATION for another folder."
                     else:
                         r["cwd"] = want
+            if "router_on" in b:
+                r["router_on"] = b["router_on"]
             c.save()
         if restart:
             c.stop()
@@ -1026,8 +1117,50 @@ def register(app):
         c = _conv(b.get("id", ""))
         if not c or not text:
             return jsonify({"error": "no such conversation" if not c else "empty"}), 400
+        if c.busy:
+            return jsonify({"ok": False, "error": "still answering"}), 409
+        router_on = b.get("router")
+        if router_on is not None:
+            if not isinstance(router_on, bool):
+                return jsonify({"ok": False, "error": "router must be true or false"}), 400
+            with c.lock:
+                c.room["router_on"] = router_on
+                c.save()
+        with c.lock:
+            router_on = bool(c.room.get("router_on", False))
+        route = None
+        if router_on:
+            import pair_chat
+            st = pair_chat.status(_key, PROVIDERS)
+            if st["active"]:
+                return jsonify({"ok": False, "error": "Turn off pair mode before using the model router."}), 409
+            provider = get_provider()
+            try:
+                import capi_model_router
+                route = capi_model_router.choose(provider, text, b.get("files") or [])
+            except (RuntimeError, ValueError) as exc:
+                return jsonify({"ok": False, "error": f"Model routing failed: {exc}"}), 502
+            restart = False
+            with c.lock:
+                previous_model = c.room.get("model")
+                if provider == "gcloud":
+                    c.room["gmodel"] = route["model"]
+                else:
+                    c.room["model"] = route["model"]
+                    restart = c.running() and previous_model != route["model"]
+                c.room["last_route"] = route
+                c.room["total"] = round(float(c.room.get("total", 0.0)) + route["router_cost_usd"], 6)
+                c.room["messages"].append({
+                    "role": "tool",
+                    "text": (f"MODEL ROUTER → {route['model']} · {route['reason']} "
+                             f"(judge {route['judge_model']}, router cost ${route['router_cost_usd']:.6f})"),
+                })
+                c.save()
+            if restart:
+                c.stop()
         ok = c.send(text, b.get("files") or None)
-        return jsonify({"ok": ok, **c.state(), **({"error": c.error} if not ok and c.error else {})})
+        return jsonify({"ok": ok, **c.state(), **({"route": route} if route else {}),
+                        **({"error": c.error} if not ok and c.error else {})})
 
     @app.post("/api/capi/turn")
     def capi_turn():

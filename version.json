@@ -1,6 +1,6 @@
 {
-  "version": 28,
-  "updated_at": "2026-11-19T05:48:19+0100",
+  "version": 30,
+  "updated_at": "2026-11-19T10:36:48+0100",
   "log": [
     {
       "version": 1,
@@ -225,6 +225,54 @@
         "mac_app/app/App.swift",
         "mac_app/app/Updater.swift",
         "TAKEOVER.md",
+        "version.json"
+      ]
+    },
+    {
+      "version": 29,
+      "timestamp": "2026-11-19T10:26:24+0100",
+      "message": "v29: CAPI-first navigation, Auto Update chat, Python CAPI client and capabilities, folder selection, Gemini attachment/media fixes, per-chat model router, and estimated-credit labeling",
+      "files": [
+        "mac_app/app/App.swift",
+        "mac_app/app/AutoUpdate.swift",
+        "mac_app/app/Capi.swift",
+        "qwen_app/capi_chat.py",
+        "qwen_app/capi_model_router.py",
+        "qwen_app/gcloud_chat.py",
+        "qwen_app/gemini_hands.py",
+        "qwen_app/test_capi_features.py",
+        "tools/queen_capi.py",
+        "tools/test_queen_capi.py",
+        "README.md",
+        "CAPI_PYTHON_API.md",
+        "queen_skills/capi.md",
+        "TAKEOVER.md",
+        "LESSONS.md",
+        "install.sh",
+        "version.json"
+      ]
+    },
+    {
+      "version": 30,
+      "timestamp": "2026-11-19T10:36:48+0100",
+      "message": "v30: release CAPI-first navigation, Auto Update chat, Python client, folder selection, media safety, model routing, and honest estimated-credit reporting",
+      "files": [
+        "mac_app/app/App.swift",
+        "mac_app/app/AutoUpdate.swift",
+        "mac_app/app/Capi.swift",
+        "qwen_app/capi_chat.py",
+        "qwen_app/capi_model_router.py",
+        "qwen_app/gcloud_chat.py",
+        "qwen_app/gemini_hands.py",
+        "qwen_app/test_capi_features.py",
+        "tools/queen_capi.py",
+        "tools/test_queen_capi.py",
+        "README.md",
+        "CAPI_PYTHON_API.md",
+        "queen_skills/capi.md",
+        "TAKEOVER.md",
+        "LESSONS.md",
+        "install.sh",
         "version.json"
       ]
     }

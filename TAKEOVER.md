@@ -1,3 +1,19 @@
+## v30 (19.11.2026): CAPI-first release candidate
+
+The Swift status line now has only two top-level choices: CAPI first and AUTO UPDATE last. TRIPLE, CHATS, and NEW CHAT were removed from that line; CAPI retains its own saved-chat list and NEW CHAT control. The prior tab is remembered, with older saved modes opening CAPI by default.
+
+The Auto Update tab wraps the existing `/api/auto_update/*` pipeline with a local chat history, provider/model selectors, progress polling, final reports, an explicit update confirmation, and separate paid-API consent when requested by the backend. Its current surgical-patch allowlist is backend-only (`qwen_app/app.py`, `qwen_app/index.html`, and `qwen_app/auto_updater.py`); Swift app source is built and released by the GitHub mac-app workflow. The full pipeline validates, bumps a version, publishes, and syncs local files; the local Claude route instead edits and reports without pushing.
+
+CAPI now has a per-chat model-router switch. The cheapest model in the selected provider's catalog judges each prompt (including attachment names and MIME types, never file contents); the selected model, reason, and router cost are shown in the chat total and in the conversation. The router is off by default, is incompatible with pair mode, and reports errors instead of silently falling back. Google Cloud credit is explicitly labeled an estimate, not a live balance.
+
+The Python API client is `tools/queen_capi.py`; capabilities are at `GET /api/capi/capabilities` and usage is documented in `CAPI_PYTHON_API.md`. CAPI folders can be selected with a directory picker and must be existing directories below the home directory. Gemini tool calls receive the prompt's file attachments in the selected folder; Google Cloud Gemini supports only the allowlisted audio/video MIME types, while Claude/Oxyy and pair mode reject media they cannot process.
+
+Validation: all Python install-gate tests, the CAPI feature/API tests, Python compilation, JSON parsing, and `git diff --check` pass. Swift UI, the GitHub mac-app workflow, local installation, live API routing, and the requested song-to-PDF stress test remain pending. Swift UI is compiled by the GitHub mac-app workflow, not on this Mac.
+
+## v29 work: CAPI-first navigation, Auto Update chat, and Python API
+
+These features were implemented as v29 work and are released together under v30 after the attachment-routing, MIME validation, and cost-accounting refinements above.
+
 ## v28 (19.11.2026): Quit guard
 
 Marko asked that Queen never quits without asking. App.swift `Delegate`: `applicationShouldTerminate` shows an NSAlert "Are you sure you want to quit?" (Quit / Cancel) after activating the app; Cancel returns `.terminateCancel`. `applicationWillTerminate` (runs only after a confirmed quit) calls `Queen.shared.stopIfOurs()`: the OFF button used to stop the server and backend BEFORE terminate, so a Cancel would have left a dead Queen; it now only calls `NSApp.terminate`. Bypasses: `Delegate.quitWithoutAsking` (set by `Updater.install` before its terminate, because the detached swap script waits for the PID and the auto-update has nobody to click) and system log out / restart / shut down (quit-reason attribute 'why?' on the current Apple event). CI: `mac_app/test.sh` compiles only app/core/*.swift, not App.swift, so the guard cannot hang it. Side effect: Cmd-Q and Dock Quit now also stop the backend (before, only OFF did). Anything that quits Queen by AppleScript or AX (a session relaunching after a build) now meets the dialog and must press Quit. Not tested live: the dialog itself (compiled only by GitHub).

@@ -26,6 +26,14 @@ Queen is Marko's AI assistant on Groq (default model `qwen/qwen3.6-27b`). She an
 
 - Nothing changed: `queen.service` runs `app.py` alone on 8765.
 
+## Current interface
+
+- The Swift status line has CAPI first and AUTO UPDATE last. CAPI keeps its own chat list; the old TRIPLE/CHATS/NEW CHAT top-level choices are gone.
+- CAPI supports provider-aware chats, an optional per-chat model router, folder selection, and explicit file attachments. Gemini audio/video support is limited to the MIME types documented in `CAPI_PYTHON_API.md`; other unsupported binary files are rejected.
+- Google Cloud credit is a historical Billing snapshot minus Queen's estimated usage ledger, not a live balance.
+- Auto Update is a chat front end for the existing backend-only update pipeline. Swift app source is built and released by GitHub Actions, not patched by that backend pipeline.
+- The standard-library Python client and API boundaries are documented in [CAPI_PYTHON_API.md](./CAPI_PYTHON_API.md).
+
 ## Files Queen keeps (`~/.groq`, never in the repo)
 
 `keys.txt`, `.env`, `key_state.json`, `spend_ledger.json`, `api_token`, `chats/`, `approvals/`, `training/`, `queen_skills/`.
@@ -35,7 +43,7 @@ Swift and Python read and write the same files in the same formats. No key is ev
 
 Python side (both locations): `./install.sh` (into `~/.groq`).
 
-Mac app: `mac_app/install.sh v5` (gh release download, quit the old copy, /Applications, sign "Mantra Apps"), then
+Mac app: `mac_app/install.sh v30` (gh release download, quit the old copy, /Applications, sign "Mantra Apps"), then
 `open "/Applications/Groq Queen AI Studio (Mantra).app"`.
 
-More: `TAKEOVER.md` (what is where, how to test), `LESSONS.md`, `docs/PHASE_A_REPORT.md`.
+More: `TAKEOVER.md` (what is where, how to test), `LESSONS.md`, `CAPI_PYTHON_API.md`, `docs/PHASE_A_REPORT.md`.
