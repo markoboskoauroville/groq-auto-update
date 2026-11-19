@@ -25,10 +25,10 @@ check("pick report over side note", P.pick_answer("slave", "The background speec
       ["REPORT: wrote hello.py, ran it: 4", "The background speech job finished."]).startswith("REPORT"))
 check("pick final when good", P.pick_answer("master", "x" * 250 + "\nVERDICT: DONE", ["plan"]).endswith("DONE"))
 check("verdict missing", P.parse_verdict("looks fine") == "")
-cat = [("gemini-3.5-flash-lite", "1", .1, .4), ("gemini-3.8-flash", "2", .3, 2.5), ("gemini-2.5-pro", "3", 1.25, 10)]
+cat = [("gemini-3.5-flash-lite", "1", .1, .4), ("gemini-3.8-flash", "2", .3, 2.5), ("gemini-3.1-pro-preview", "3", 1.25, 10)]
 check("slave model + reason", P.parse_slave_model("plan\nSLAVE_MODEL: gemini-3.8-flash - needs care", cat, "")[:2]
       == ("gemini-3.8-flash", "needs care"))
-check("slave model backticks", P.parse_slave_model("`SLAVE_MODEL: gemini-2.5-pro`", cat, "")[0] == "gemini-2.5-pro")
+check("slave model backticks", P.parse_slave_model("`SLAVE_MODEL: gemini-3.1-pro-preview`", cat, "")[0] == "gemini-3.1-pro-preview")
 m, why, note = P.parse_slave_model("SLAVE_MODEL: gpt-9 - x", cat, "")
 check("slave model invalid -> cheapest with note", m == "gemini-3.5-flash-lite" and note)
 check("slave model missing keeps current", P.parse_slave_model("no line", cat, "gemini-3.8-flash")[0] == "gemini-3.8-flash")
@@ -60,6 +60,37 @@ with tempfile.TemporaryDirectory(dir=str(Path.home())) as d:
     res, _ = H.tool(root, "run_shell", {"command": "sleep 5", "timeout": 1})
     check("timeout", res.get("timed_out"))
     check("list", "a/" in H.tool(root, "list_files", {})[0].get("entries", []))
+
+import gcloud_chat as G
+old_gm = G.gemini_models
+try:
+    G.gemini_models = lambda: ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "gemini-3.1-pro-preview"]
+    sc = P.slave_catalog("gcloud")
+    t3 = [m for m, tier, _, _ in sc if "3" in tier]
+    check("slave catalog skips retired pro", t3 == ["gemini-3.1-pro-preview"])
+finally:
+    G.gemini_models = old_gm
+
+old_recovery = H._call_with_recovery
+old_cost = H._usage_cost
+old_ledger = G.ledger
+try:
+    def mock_recovery(model, body, notice_cb=None):
+        if body.get("toolConfig"):
+            return {"candidates": [{"content": {"parts": [{"text": "FINAL REPORT"}]}}]}, model
+        return {"candidates": [{"content": {"parts": [{"functionCall": {"name": "list_files", "args": {}}}]}}]}, model
+
+    H._call_with_recovery = mock_recovery
+    H._usage_cost = lambda model, j: 0.0
+    G.ledger = lambda *a, **k: None
+
+    with tempfile.TemporaryDirectory(dir=str(Path.home())) as d:
+        ans, total, steps = H.agent_turn("dummy-model", "system", [], "test task", d)
+        check("forced final report on step cap", ans == "FINAL REPORT" and steps == H.MAX_STEPS)
+finally:
+    H._call_with_recovery = old_recovery
+    H._usage_cost = old_cost
+    G.ledger = old_ledger
 
 print("ALL PASS" if ok else "SOME FAILED")
 sys.exit(0 if ok else 1)

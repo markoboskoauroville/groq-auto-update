@@ -119,8 +119,9 @@ def slave_catalog(slave):
         import gcloud_chat as G
         ms = G.gemini_models()
 
+        ret = getattr(G, "RETIRED", set())
         def newest(pred):
-            c = [m for m in ms if pred(m)]
+            c = [m for m in ms if pred(m) and m not in ret]
             return c[0] if c else ""
         lite = newest(lambda m: "flash-lite" in m and "preview" not in m)
         flash = newest(lambda m: "flash" in m and "lite" not in m and "preview" not in m)

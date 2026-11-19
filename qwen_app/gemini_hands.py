@@ -20,6 +20,7 @@ Keys come from gcloud_chat._keys() and are never printed.
 from __future__ import annotations
 import re
 
+import json
 import os
 import shlex
 import signal
@@ -253,6 +254,14 @@ def _call_with_recovery(model, body, timeout=120, notice_cb=None):
         is_404 = 'Gemini 404' in msg and any(x in msg.lower() for x in ['no longer available', 'not found', 'models/'])
         if not is_404:
             raise
+        try:
+            import gcloud_chat as _G
+            _G.RETIRED.add(current)
+            rf = Path(__file__).parent / "retired_models.json"
+            with open(rf, "w", encoding="utf-8") as f:
+                json.dump(sorted(_G.RETIRED), f, indent=2)
+        except Exception:
+            pass
         new_model = _find_replacement(current, msg)
         if not new_model or new_model == current:
             raise RuntimeError(f"404: {current} is gone, and no replacement was found ({msg})")
@@ -289,6 +298,7 @@ def text_turn(model, system, history, text, label="pair", notice_cb=None):
 def agent_turn(model, system, history, text, cwd, on_tool=None, stop_event=None, budget=None, label="pair slave", notice_cb=None):
     """Gemini as SLAVE: the tool loop. -> (final text, cost, steps). budget(): dollars still allowed for this pair turn.
     Raises Stopped on STOP, RuntimeError on a service error (cost so far already booked; see .cost on the error)."""
+    system = system + f"\n\nYou have at most {MAX_STEPS} tool steps. Always end with a plain-text report (no tool call): what you did, the commands with their real output, what is left."
     root, why = folder_ok(cwd)
     if not root:
         raise RuntimeError("Gemini slave: " + why)
@@ -330,5 +340,25 @@ def agent_turn(model, system, history, text, cwd, on_tool=None, stop_event=None,
             if fc.get("id"):
                 fr["id"] = fc["id"]
             replies.append({"functionResponse": fr})
+        replies.append({"text": f"[step {step} of {MAX_STEPS}. Report by step {MAX_STEPS - 3}: what was done, the commands with their real output, what is left.]"})
         contents.append({"role": "user", "parts": replies})
+    contents.append({"role": "user", "parts": [{"text": "Tool steps are used up. Write your final report now: what you did, the commands with their real output, what is not done."}]})
+    try:
+        j, model = _call_with_recovery(model, {
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": contents,
+            "tools": [{"functionDeclarations": DECLS}],
+            "toolConfig": {"functionCallingConfig": {"mode": "NONE"}},
+        }, notice_cb=notice_cb)
+    except RuntimeError as exc:
+        exc.cost = total
+        raise
+    c = _usage_cost(model, j)
+    total += c
+    G.ledger(c, f"{label} final report", model)
+    cand = (j.get("candidates") or [{}])[0]
+    parts = (cand.get("content") or {}).get("parts") or []
+    ans = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
+    if ans:
+        return ans, total, MAX_STEPS
     return f"(the slave used all {MAX_STEPS} tool steps without a final report)", total, MAX_STEPS

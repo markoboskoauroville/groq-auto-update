@@ -34,7 +34,18 @@ CREDIT = {"start_usd": 225.31, "at": 1795014607.0, "expires": "2026-12-02", "rea
 VERTEX_ENABLED = False                 # v25: Google Cloud is Gemini only (Claude there is a paid Marketplace product); code kept dormant
 MAX_FILE = 20 * 1024 * 1024
 VERTEX_MODELS = ["claude-opus-4-5@20251101", "claude-sonnet-4-5@20250929", "claude-haiku-4-5@20251001"]
-FALLBACK_GEMINI = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-pro"]
+def _load_retired():
+    try:
+        p = Path(__file__).parent / "retired_models.json"
+        if p.is_file():
+            with open(p, "r", encoding="utf-8") as f:
+                return set(json.load(f))
+    except Exception:
+        pass
+    return set()
+
+RETIRED = {"gemini-2.5-pro"} | _load_retired()
+FALLBACK_GEMINI = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-3.1-pro-preview"]
 # USD per million tokens (input, output): list-price estimates, the credit counter is an estimate
 RATES = [("opus", (5.0, 25.0)), ("sonnet", (3.0, 15.0)), ("haiku", (1.0, 5.0)),
          ("pro", (1.25, 10.0)), ("lite", (0.10, 0.40)), ("flash", (0.30, 2.50))]
@@ -153,10 +164,11 @@ def gemini_models():
                         and not any(b in n for b in bad) and "latest" not in n):
                     out.append(n)
             if out:
-                return sorted(set(out), key=lambda n: (-_vkey(n), "lite" in n, "pro" in n, n))
+                filtered = [m for m in out if m not in RETIRED]
+                return sorted(set(filtered), key=lambda n: (-_vkey(n), "lite" in n, "pro" in n, n))
         except Exception:
             pass
-    return list(FALLBACK_GEMINI)
+    return [m for m in FALLBACK_GEMINI if m not in RETIRED]
 
 
 def default_gemini(models):
